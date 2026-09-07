@@ -1,19 +1,54 @@
 # Enterprise AI Mesh
 
-MVP de hackathon construido sobre [QVAC](https://github.com/tetherto/qvac) (SDK
-local-first de Tether). Tesis: RAG empresarial local, un AI Router que decide
-qué modelo y en qué nodo ejecutar una solicitud, delegated inference P2P entre
-peers QVAC, y un usage meter con settlement opcional en USDt/WDK.
+## Qué es esta app
 
-Este repo es el **entorno genérico**: contratos de API, Dockerfiles y los 5
-servicios del proyecto ya arrancando y hablando entre sí, con un flujo real
-(no mockeado) de "pregunta -> RAG local -> Router -> inferencia local/P2P ->
-respuesta + costo". Las reglas finas (clasificación de complejidad,
-privacidad, pricing/settlement real) son *mission-dependent* y se afinan
-cuando se asignen las tareas de la hackathon — ver `CHANGELOG.md` por
-componente y la sección "Qué falta" más abajo.
+**Enterprise AI Mesh** es un MVP de hackathon construido sobre
+[QVAC](https://github.com/tetherto/qvac), el SDK local-first de Tether para
+correr IA en el dispositivo (sin cloud, sin API keys).
 
-## Arquitectura
+La tesis del proyecto: *"Local intelligence. Distributed compute. Autonomous
+settlement."* En una empresa no solo importa qué modelo responde una
+pregunta, sino **dónde** se ejecuta, **qué información** usa, **cuántos
+recursos** consume y **cuánto cuesta** esa capacidad. La propuesta combina
+cuatro piezas:
+
+1. **RAG local**: el conocimiento empresarial (documentación, procedimientos,
+   troubleshooting) vive en un vector store local, nunca en un servicio
+   cloud de terceros.
+2. **AI Router**: decide qué modelo (Small/Medium/Large) y en qué nodo
+   ejecutar cada solicitud, según complejidad, sensibilidad de la
+   información y capacidad disponible.
+3. **P2P delegated inference**: si el nodo de entrada no tiene capacidad
+   suficiente, la inferencia se delega a otro nodo QVAC autorizado de la
+   red — nunca a un proveedor cloud externo.
+4. **Usage metering**: cada inferencia registra nodo, modelo, duración,
+   tokens y costo, representable a futuro como settlement programático en
+   USDt/WDK.
+
+Problema que resuelve: dependencia de APIs cloud para tareas que no la
+necesitan, riesgo de exponer información sensible a terceros, uso de modelos
+grandes para preguntas triviales, infraestructura propia subutilizada, y
+poca visibilidad de cuánto cuesta realmente la IA en la organización.
+
+## Estado de este repo
+
+Esto **no es el proyecto completo** de la hackathon — es el entorno
+genérico: todo lo que no depende de qué tarea específica le toque a cada
+persona cuando se repartan los 5 workstreams (RAG, Router, Medium Peer,
+GPU/Large Peer, Frontend+Economy). Concretamente, ya funciona un flujo real
+de punta a punta (no mockeado):
+
+```
+pregunta -> RAG local -> Router decide -> inferencia local (Peer) -> respuesta + fuentes + costo
+```
+
+Las reglas finas (clasificación de complejidad real, políticas de privacidad
+sofisticadas, pricing/settlement real) quedan como placeholders simples a
+propósito — son *mission-dependent* y se afinan cuando se asignen las
+tareas. Ver "Limitaciones" más abajo y `CHANGELOG.md` para el historial de
+cada componente.
+
+## Componentes
 
 ```
 Frontend (chat) --POST /ask--> Router --POST /search--> RAG
@@ -23,21 +58,128 @@ Frontend (chat) --POST /ask--> Router --POST /search--> RAG
                                                     QVAC local (completion real)
 ```
 
-- **RAG** (`services/rag`): ingesta unos documentos demo e indexa con QVAC
-  (`rag()` / RagRequest de `tetherto-qvac-sdk`). `POST /search` devuelve
-  contexto + fuentes + sensibilidad.
-- **Router** (`services/router`): registro de peers (auto-anuncio, sin IPs
-  hardcodeadas), política de decisión simple (`app/policy.py`), y
-  `POST /ask` que ejecuta el flujo completo RAG -> Peer -> `UsageEvent`.
-- **Peer** (`services/peer`): una sola imagen, usada dos veces
-  (`peer-medium`, `peer-gpu`) diferenciada solo por env vars. Corre un
-  modelo QVAC real (`completion()`) y expone `/capabilities`, `/health`,
-  `/infer`.
-- **Frontend** (`services/frontend`): chat + panel de peers en React/Vite,
-  contra el contrato compartido en `shared-ts/types.ts`.
-- **Shared** (`shared/py/qvac_mesh_shared`): los contratos Pydantic
-  (`ExecutionPlan`, `PeerCapability`, `UsageEvent`, etc.) que usan RAG,
-  Router y Peer. Es un paquete pip instalable (`pip install -e shared/py`).
+| Componente | Carpeta | Qué hace hoy |
+|---|---|---|
+| **RAG** | `services/rag` | Ingesta 4 documentos demo y los indexa con QVAC real (`rag()`/`RagRequest` de `tetherto-qvac-sdk`). `POST /search` devuelve contexto + fuentes + sensibilidad. Si el modelo de embeddings no está disponible, cae a búsqueda por keywords sobre los mismos docs — nunca se cae la demo. |
+| **Router** | `services/router` | Registro de peers por auto-anuncio/heartbeat (sin IPs hardcodeadas), una política de decisión simple (`app/policy.py`), y `POST /ask` que ejecuta el flujo completo: RAG → elegir peer → inferencia → `UsageEvent`. |
+| **Peer** | `services/peer` | Una sola imagen usada dos veces (`peer-medium`, `peer-gpu`), diferenciada solo por variables de entorno. Corre un modelo QVAC real (`completion()`) y expone `/capabilities`, `/health`, `/infer`. Si el modelo no cargó, responde un stub explícito en vez de fallar. |
+| **Frontend** | `services/frontend` | Chat + panel de estado de peers en React/Vite, tipado contra el contrato compartido (`shared-ts/types.ts`). Habla solo con el Router, nunca directo con RAG o los Peers. |
+| **Shared** | `shared/py/qvac_mesh_shared` | Contratos Pydantic (`ExecutionPlan`, `PeerCapability`, `UsageEvent`, `RagResult`, etc.) que usan RAG, Router y Peer. Paquete pip instalable (`pip install -e shared/py`). Su espejo en TypeScript vive en `shared-ts/types.ts`. |
+
+## Arquitectura a la que apuntamos
+
+Lo que hoy corre es un **walking skeleton**: prueba que el concepto
+"pregunta → conocimiento local → decisión → inferencia local/P2P →
+resultado medido" funciona de verdad, con una sola instancia real de cada
+pieza. La arquitectura completa del proyecto (que se termina de construir
+cuando se asignen los 5 workstreams) es:
+
+```
+USUARIO -> ASSISTANT -> AI ROUTER (local)
+                            |
+                            +-> RAG LOCAL (conocimiento empresarial)
+                            |
+                            +-> clasifica privacidad + complejidad
+                            |
+                            +-> Small/Medium/Large
+                                   |
+                    capacidad suficiente? --NO--> P2P a otro nodo QVAC autorizado
+                                   |
+                                  SI
+                                   |
+                              inferencia local
+                                   |
+                              USAGE METER -> dashboard -> settlement USDt/WDK
+```
+
+Diferencias clave entre el walking skeleton actual y esa meta:
+
+- **Hoy**: 1 Peer "medium" y 1 Peer "gpu" son contenedores en la misma
+  máquina (la topología recomendada por el documento original del proyecto
+  para desarrollo/demo). **Meta**: peers en máquinas físicas distintas,
+  demostrando descentralización real, no solo lógica.
+- **Hoy**: el Router usa una heurística de palabras clave/longitud para
+  clasificar complejidad, y siempre trata `RESTRICTED` como local-only.
+  **Meta**: un clasificador real de complejidad + una matriz de políticas de
+  privacidad completa (public/internal/confidential/restricted ×
+  local/trusted-peer/peer-permitido).
+- **Hoy**: `UsageEvent.settlement_status` es siempre `not_implemented`.
+  **Meta**: settlement programático real vía USDt/WDK cuando un nodo
+  consume capacidad de otro.
+- **Hoy**: RAG indexa 4 documentos hardcodeados. **Meta**: pipeline de
+  ingesta real sobre documentación de infraestructura, aplicaciones,
+  tickets y procedimientos de la empresa.
+
+## Limitaciones actuales y cómo abordarlas luego
+
+**1. QVAC no tiene una primitiva de "delegated inference" lista para usar.**
+Su P2P real (Hyperswarm/Hyperdrive + blind relays) sirve para *descargar
+modelos* entre peers, no para enrutar cómputo de inferencia. La "red P2P" de
+este proyecto es una capa de aplicación construida encima de QVAC (Router
+llamando por HTTP normal al `/infer` de un Peer), no algo que QVAC resuelva
+solo.
+→ *Cómo abordarla*: es una decisión de diseño ya tomada y funcionando, no un
+bug — documentarla así evita que alguien pierda tiempo buscando una API de
+QVAC que no existe. Si más adelante se quiere aprovechar el P2P nativo de
+QVAC, sería para *distribuir los modelos* (que cada peer no tenga que
+descargar el mismo GGUF por su cuenta), no para el ruteo de inferencia en sí.
+
+**2. Un solo Peer real, el segundo es la misma imagen duplicada.**
+`peer-gpu` corre hoy el mismo modelo chico que `peer-medium` (para no forzar
+una descarga grande en el baseline). No hay lógica real de selección entre
+múltiples peers del mismo tier.
+→ *Cómo abordarla*: cuando se asigne el workstream de GPU/Large, cambiar
+`MODEL_NAME` en `docker-compose.yml` a un modelo grande real y agregar la
+config de GPU (device mapping) al Dockerfile/compose de ese peer. El código
+de `services/peer` no necesita cambiar — es genérico por diseño.
+
+**3. Clasificación de complejidad/privacidad es un heurístico simple.**
+`classify_complexity` en `services/router/app/policy.py` mira longitud y
+palabras clave, no el contenido real de la solicitud.
+→ *Cómo abordarla*: reemplazar esa función por un clasificador real (puede
+ser otro modelo QVAC chico corriendo en el propio Router, o reglas más
+finas) cuando se conozcan los casos de uso reales de la hackathon. El
+contrato (`ExecutionPlan`) no cambia, así que Frontend/Peers no se enteran.
+
+**4. Sin P2P real entre máquinas físicas.**
+Los 2 peers son contenedores en un solo host.
+→ *Cómo abordarla*: mover un peer a otra laptop es, por diseño, solo cambiar
+`ROUTER_URL`/`PEER_*_URL` en su `.env` (ningún IP está hardcodeado en
+código) y correr `services/peer` ahí directamente o con Docker. No requiere
+tocar código.
+
+**5. Sin settlement económico real.**
+`UsageEvent.settlement_status` queda en `"not_implemented"`.
+→ *Cómo abordarla*: es intencional — el documento del proyecto ya aclara que
+el settlement es una capa secundaria de contabilidad, no debe convertirse en
+el centro del MVP. Cuando se aborde, conectar ese campo a WDK/USDt es un
+cambio acotado al Workstream 5 (Frontend/Economy) + un evento que el Router
+ya emite.
+
+**6. RAG con documentos demo, no la base de conocimiento real.**
+→ *Cómo abordarla*: reemplazar `DEMO_DOCUMENTS` en
+`services/rag/app/demo_docs.py` por un pipeline de ingesta real (chunking,
+más de un workspace, filtros de sensibilidad por documento) es trabajo
+acotado al Workstream 1 — la interfaz `POST /search` no cambia.
+
+**7. Verificación de `docker compose up --build` pendiente.**
+Se validó cada servicio por separado (tests unitarios, `docker compose
+config`) pero no se corrió el build completo con el daemon de Docker en
+esta sesión (Docker Desktop tuvo problemas en la máquina de desarrollo).
+→ *Cómo abordarla*: correr `docker compose up --build` la primera vez que
+alguien tenga Docker Desktop sano; si algo falla en el build (típicamente la
+instalación del worker de QVAC), ver el caveat de Windows/npm más abajo.
+
+**8. Caveat de Windows: `install-worker` no detecta `npm`.**
+En esta máquina, `tetherto-qvac-sdk`'s `install-worker` no encontró `npm`
+corriendo desde Git Bash/PowerShell (aunque `npm`/`node` sí están en PATH) —
+un problema de resolución de comandos del propio instalador del SDK en
+Windows nativo, no de este repo. Dentro del contenedor Docker (Debian +
+Node.js vía NodeSource) no debería reproducirse.
+→ *Cómo abordarla si aparece*: instalar `@qvac/sdk` globalmente
+(`npm install -g @qvac/sdk@<version>`) y apuntar `QVAC_SDK_DIR`/
+`QVAC_WORKER_PATH` a esa instalación (workaround documentado por el propio
+SDK).
 
 ## Cómo levantar el entorno
 
@@ -54,25 +196,12 @@ docker compose up --build
 La primera vez, `peer-medium` y `peer-gpu` descargan un modelo pequeño real
 (`LLAMA_3_2_1B_INST_Q4_0`, ~770MB) y RAG descarga un modelo de embeddings
 (`EMBEDDINGGEMMA_300M_Q4_0`, ~280MB) vía QVAC. Mientras se descarga, cada
-servicio sigue funcionando en modo fallback (RAG hace keyword search sobre
-los docs demo, el Peer responde con una respuesta "stub" que dice que el
-modelo no está listo) — así nunca se cae la demo por falta de red/tiempo.
+servicio sigue funcionando en modo fallback (ver "Limitaciones") — así nunca
+se cae la demo por falta de red/tiempo.
 
 Sin Docker, cada servicio corre igual con un venv (`pip install -e shared/py
 -r services/<x>/requirements.txt && uvicorn app.main:app`) más `npm install
 && npm run dev` en `services/frontend`.
-
-### Caveat verificado en este entorno (Windows)
-
-`tetherto-qvac-sdk`'s `install-worker` no detectó `npm` corriendo dentro de
-Git Bash/PowerShell en esta máquina Windows (aunque `npm`/`node` sí están
-instalados y en PATH) — es un problema de resolución de comandos del propio
-instalador del SDK en Windows nativo, no de este repo. Dentro del contenedor
-Docker (Debian + Node.js vía NodeSource) este problema no debería
-reproducirse, pero si alguien lo ve: instalar `@qvac/sdk` globalmente
-(`npm install -g @qvac/sdk@<version>`) y apuntar `QVAC_SDK_DIR`/
-`QVAC_WORKER_PATH` a esa instalación es el workaround documentado por el
-propio SDK.
 
 ## Variables de entorno
 
@@ -89,16 +218,6 @@ capacidades, así que mover un peer a otra laptop es solo cambiar esas URLs.
 | 3. Medium Peer | `services/peer` + env vars de `peer-medium` en `docker-compose.yml` | nada de código nuevo si el modelo alcanza; si no, ajustar `qvac_runtime.py` |
 | 4. GPU/Large Peer | `services/peer` + env vars de `peer-gpu` | cambiar `MODEL_NAME` a un modelo grande real + config de GPU en el Dockerfile/compose |
 | 5. Frontend/Economy | `services/frontend/src` | pulir UI, sumar wallet/settlement real (hoy `UsageEvent.settlement_status` es `not_implemented`) |
-
-## Qué falta (mission-dependent, no bloquea el arranque)
-
-- Pipeline de ingesta RAG a medida (hoy son 4 docs demo hardcodeados).
-- Clasificación real de complejidad/privacidad (hoy es un heurístico de
-  palabras clave/longitud).
-- P2P real entre máquinas físicas distintas (hoy los 2 peers son contenedores
-  en la misma máquina, tal como recomienda el documento del proyecto para
-  desarrollo).
-- Settlement USDt/WDK real.
 
 ## Tests
 
