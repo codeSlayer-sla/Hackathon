@@ -18,6 +18,8 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 ## Frontend
 
+- `8aa56e9` 2026-09-07: chat React/Vite + panel de peers, contra Router `/ask` y `/peers`, tipado con `shared-ts/types.ts`
+
 ## Shared / Infra
 
 - `ee97a05` 2026-09-07: contratos Pydantic compartidos (ExecutionPlan, PeerCapability, UsageEvent, RagResult, enums, NodeSettings)
