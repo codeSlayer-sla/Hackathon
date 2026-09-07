@@ -21,6 +21,7 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 ## Frontend
 
+- `4216d70` 2026-09-07: suite vitest + testing-library para el chat (render + estado vacio de peers)
 - `8aa56e9` 2026-09-07: chat React/Vite + panel de peers, contra Router `/ask` y `/peers`, tipado con `shared-ts/types.ts`
 
 ## Shared / Infra
