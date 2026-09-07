@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+node_modules/
+dist/
+.env
+qvac-models/
+.DS_Store
