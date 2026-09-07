@@ -5,6 +5,7 @@ venv/
 *.egg-info/
 node_modules/
 dist/
+*.tsbuildinfo
 .env
 qvac-models/
 .DS_Store
