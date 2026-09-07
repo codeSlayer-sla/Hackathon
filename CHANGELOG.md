@@ -13,3 +13,5 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 ## Frontend
 
 ## Shared / Infra
+
+- `ee97a05` 2026-09-07: contratos Pydantic compartidos (ExecutionPlan, PeerCapability, UsageEvent, RagResult, enums, NodeSettings)
