@@ -11,6 +11,7 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 ## Router
 
+- `536099e` 2026-09-07: suite pytest para policy/registry/`/ask` (incluye `/ask` completo con RAG y Peer mockeados)
 - `3b99a56` 2026-09-07: servicio Router: peer registry con heartbeat, policy placeholder, `POST /ask` ejecuta el flujo completo RAG->Peer->UsageEvent
 
 ## Peer (Medium/Large)
