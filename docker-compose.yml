@@ -1,0 +1,85 @@
+name: enterprise-ai-mesh
+
+services:
+  rag:
+    build:
+      context: .
+      dockerfile: services/rag/Dockerfile
+    ports:
+      - "8002:8000"
+    volumes:
+      - qvac-models-rag:/data/qvac-models
+    networks: [mesh]
+
+  router:
+    build:
+      context: .
+      dockerfile: services/router/Dockerfile
+    environment:
+      NODE_ID: router
+      RAG_URL: http://rag:8000
+    ports:
+      - "8001:8000"
+    depends_on: [rag]
+    networks: [mesh]
+
+  peer-medium:
+    build:
+      context: .
+      dockerfile: services/peer/Dockerfile
+    environment:
+      NODE_ID: peer-medium
+      ROLE: medium_provider
+      MODEL_TIER: medium
+      MODEL_NAME: LLAMA_3_2_1B_INST_Q4_0
+      PRICE_PER_1K_TOKENS: "0"
+      ROUTER_URL: http://router:8000
+      PORT: "8000"
+    ports:
+      - "8003:8000"
+    volumes:
+      - qvac-models-medium:/data/qvac-models
+    depends_on: [router]
+    networks: [mesh]
+
+  peer-gpu:
+    build:
+      context: .
+      dockerfile: services/peer/Dockerfile
+    environment:
+      NODE_ID: peer-gpu
+      ROLE: large_provider
+      MODEL_TIER: large
+      # Same small model as peer-medium for now so the baseline boots without
+      # a big GPU download; swap for a real large model + GPU config once
+      # the GPU/Large workstream task is assigned.
+      MODEL_NAME: LLAMA_3_2_1B_INST_Q4_0
+      PRICE_PER_1K_TOKENS: "0.003"
+      ROUTER_URL: http://router:8000
+      PORT: "8000"
+    ports:
+      - "8004:8000"
+    volumes:
+      - qvac-models-gpu:/data/qvac-models
+    depends_on: [router]
+    networks: [mesh]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: services/frontend/Dockerfile
+      args:
+        VITE_ROUTER_URL: http://localhost:8001
+    ports:
+      - "5173:5173"
+    depends_on: [router]
+    networks: [mesh]
+
+networks:
+  mesh:
+    driver: bridge
+
+volumes:
+  qvac-models-rag:
+  qvac-models-medium:
+  qvac-models-gpu:
