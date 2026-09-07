@@ -10,6 +10,8 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 ## Router
 
+- `3b99a56` 2026-09-07: servicio Router: peer registry con heartbeat, policy placeholder, `POST /ask` ejecuta el flujo completo RAG->Peer->UsageEvent
+
 ## Peer (Medium/Large)
 
 - `dae32d8` 2026-09-07: servicio Peer generico (una imagen para medium y gpu) con `/capabilities`, `/health`, `/infer` real via QVAC `completion()`, heartbeat al Router
