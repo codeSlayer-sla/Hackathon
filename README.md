@@ -100,6 +100,38 @@ capacidades, así que mover un peer a otra laptop es solo cambiar esas URLs.
   desarrollo).
 - Settlement USDt/WDK real.
 
+## Tests
+
+Cada componente tiene su propia suite (pytest para los servicios Python,
+vitest para el frontend) y un runner en `scripts/run_tests.py` que corre
+todas o un subconjunto:
+
+```bash
+# setup (una vez por venv)
+pip install -e shared/py -r requirements-test.txt \
+    -r services/rag/requirements.txt \
+    -r services/router/requirements.txt \
+    -r services/peer/requirements.txt
+cd services/frontend && npm install && cd ../..
+
+# correr todo
+python scripts/run_tests.py
+
+# correr solo algunos modulos
+python scripts/run_tests.py --modules rag router
+python scripts/run_tests.py --modules frontend
+
+# ver los nombres de modulo disponibles
+python scripts/run_tests.py --list
+```
+
+Módulos: `shared`, `rag`, `router`, `peer`, `frontend`. Los tests de RAG/Peer
+corren contra el modo fallback (sin worker/modelo QVAC real) a propósito,
+para que la suite no dependa de descargar modelos ni de tener Docker/red
+disponible; el `/ask` de punta a punta contra RAG y Peer reales se mockea en
+`services/router/tests/test_main.py` y se valida de verdad manualmente con
+`docker compose up`.
+
 ## Changelog
 
 Cada cambio a un componente se registra en `CHANGELOG.md`, en la sección de
