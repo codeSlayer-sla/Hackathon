@@ -16,6 +16,7 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 ## Peer (Medium/Large)
 
+- `bbbeb62` 2026-09-07: suite pytest para `/health`, `/capabilities`, `/infer` (modo fallback stub)
 - `dae32d8` 2026-09-07: servicio Peer generico (una imagen para medium y gpu) con `/capabilities`, `/health`, `/infer` real via QVAC `completion()`, heartbeat al Router
 
 ## Frontend
