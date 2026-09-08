@@ -41,6 +41,7 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 - `ef1cc01` 2026-09-07: installed-base en docker-compose (puerto 8005, volumen propio) + `.env.example` + `scripts/run_tests.py`
 - `42ff11f` 2026-09-08: contratos de capability-routing (PeerCapability.capabilities, RouterInferRequest/Result, TranscribeRequest/Result), image_path multimodal, client_event_id offline-sync, freshness/opportunities en AnalyticsSummary
 - `969f42f` 2026-09-07: contratos Installed Base (ObservationStatus, ConfidenceLevel, EquipmentObservation, CaptureTurnRequest/Response, CustomerSummary, AnalyticsSummary) + espejo TS
+- `1c417b2` 2026-09-08: ventana oficial de 48h confirmada (9 sep 08:00 -> 11 sep 08:00) -- todo el trabajo previo a esa fecha reclasificado como preexistente, corte explicito y verificable
 - `414a32a` 2026-09-08: declaracion obligatoria de base preexistente (hashes/fechas exactas: mesh generico antes del reto vs. trabajo dentro de la ventana de 48h) -- requisito de la hackathon, omitirlo descalifica
 - `33075f6` 2026-09-08: README reestructurado -- "como funciona" (con ejemplos curl) y "como lo monto" al frente, historial/limitaciones movidos al final
 - `cef304a` 2026-09-08: README documenta capability-routing, auth de tecnico, arquitectura multi-nodo/VPS y 5 limitaciones nuevas
