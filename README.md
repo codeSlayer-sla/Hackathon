@@ -7,6 +7,44 @@ en el dispositivo o delegada entre nodos QVAC, nunca en una API cloud de
 terceros**. Construido sobre [QVAC](https://github.com/tetherto/qvac), el
 SDK local-first de Tether.
 
+## Base preexistente declarada (requisito obligatorio de la hackathon)
+
+Las reglas de la hackathon exigen declarar cualquier base preexistente en
+el README — omitirlo descalifica, sin importar la calidad del resultado.
+Esto es exactamente lo que hay, verificable con `git log` (fechas y hashes
+reales, no aproximados):
+
+- **Construido antes de recibir el reto de Philips** — commits
+  `ee97a05`..`53d35ed`, **2026-09-07 16:12–16:32**: el mesh genérico
+  (contratos compartidos en `shared/`, el servicio `rag`, el servicio
+  `peer` con su integración real a `completion()` de QVAC, el `router`
+  original, el frontend base, `docker-compose.yml` y el framework de
+  tests). Se construyó como infraestructura de propósito general para
+  cualquier misión que asignara la hackathon, sin saber todavía cuál iba a
+  ser.
+- **Construido dentro de la ventana de la hackathon, ya con el reto en
+  mano** — commits `969f42f` en adelante (HEAD actual), desde
+  **2026-09-08 11:35**: todo `services/installed-base` (captura,
+  extracción, duplicados), y luego la extensión de `peer`/`router` a
+  capacidades multimodal/transcripción, auth de técnico, fotos, voz,
+  confidence combinado, freshness, oportunidades de renovación y consultas
+  en lenguaje natural.
+
+Nota honesta sobre el criterio **Technical (35%, "uso genuino de QVAC")**:
+el *patrón* de integración con QVAC (`Peer` cargando un modelo real y
+llamando a `completion()`) es parte de la base preexistente. Lo que se
+construyó dentro de la ventana es: la extensión de ese patrón a modelos
+multimodales (fotos) y de transcripción (voz) — capacidades de QVAC
+nuevas que no estaban integradas antes —, el enrutamiento por capacidad
+del Router, y toda la aplicación de dominio (extracción conversacional,
+duplicados, confidence, analytics, `/query`) que consume esa
+infraestructura para resolver el problema real de Philips.
+
+*(Pendiente de confirmar la hora exacta de arranque oficial de las 48
+horas con los organizadores — si arrancó antes de 2026-09-08 11:35, todo
+`services/installed-base` cae dentro de la ventana sin ambigüedad; si
+arrancó después, avisar para ajustar esta sección.)*
+
 ## Qué es esto, en una frase
 
 Un mesh de microservicios (Router + Peers QVAC + RAG) que garantiza
