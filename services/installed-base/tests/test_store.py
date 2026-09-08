@@ -124,6 +124,26 @@ def test_compute_confidence_high_with_full_completeness():
     assert compute_confidence(("NovaMed", "NM-MR700", 7.0), duplicate_count=0) == ConfidenceLevel.HIGH
 
 
+def test_compute_confidence_downgraded_by_age():
+    fresh = compute_confidence(("NovaMed", "NM-MR700", 7.0), duplicate_count=0, age_days=0)
+    stale = compute_confidence(("NovaMed", "NM-MR700", 7.0), duplicate_count=0, age_days=200)
+    assert fresh == ConfidenceLevel.HIGH
+    assert stale == ConfidenceLevel.MEDIUM
+
+
+def test_confidence_decays_when_read_long_after_creation():
+    store = Store(":memory:")
+    saved = store.insert(_obs(brand="NovaMed", model="NM-MR700", approx_age_years=7))
+    assert saved.confidence == ConfidenceLevel.HIGH  # brand new, full completeness
+
+    old_created_at = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
+    store._conn.execute("UPDATE observations SET created_at = ? WHERE id = ?", (old_created_at, saved.id))
+    store._conn.commit()
+
+    reloaded = store.list_all()[0]
+    assert reloaded.confidence == ConfidenceLevel.MEDIUM  # same data, but stale now
+
+
 def test_compute_confidence_boosted_by_independent_confirmations():
     # No completeness at all, but two independent prior reports -> boosted
     # from LOW into MEDIUM.

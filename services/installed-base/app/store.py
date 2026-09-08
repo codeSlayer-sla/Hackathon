@@ -75,6 +75,17 @@ def _normalize(name: str) -> str:
 
 
 def _row_to_observation(row: sqlite3.Row) -> EquipmentObservation:
+    created_at = datetime.fromisoformat(row["created_at"])
+    duplicates = json.loads(row["possible_duplicate_of"])
+    age_days = (datetime.now(timezone.utc) - created_at).total_seconds() / 86400
+    # Confidence is re-derived on every read (not trusted from the stored
+    # column) so that an observation's confidence reflects how recent it
+    # is *right now* -- the same row returned today vs. in 4 months gets a
+    # lower confidence if nothing has reconfirmed it since, per the
+    # brief's "completitud, antiguedad y confirmaciones independientes".
+    confidence = compute_confidence(
+        (row["brand"], row["model"], row["approx_age_years"]), len(duplicates), age_days=age_days
+    )
     return EquipmentObservation(
         id=row["id"],
         customer=row["customer"],
@@ -86,14 +97,14 @@ def _row_to_observation(row: sqlite3.Row) -> EquipmentObservation:
         model=row["model"],
         approx_age_years=row["approx_age_years"],
         estimated_install_year=row["estimated_install_year"],
-        confidence=ConfidenceLevel(row["confidence"]),
+        confidence=confidence,
         status=ObservationStatus(row["status"]),
         source=row["source"],
         observer=row["observer"],
         visit_date=row["visit_date"],
         notes=row["notes"],
-        possible_duplicate_of=json.loads(row["possible_duplicate_of"]),
-        created_at=datetime.fromisoformat(row["created_at"]),
+        possible_duplicate_of=duplicates,
+        created_at=created_at,
     )
 
 
@@ -101,14 +112,23 @@ def _row_to_photo(row: sqlite3.Row) -> dict:
     return dict(row)
 
 
-def compute_confidence(completeness_fields: tuple, duplicate_count: int) -> ConfidenceLevel:
-    """Combines completeness (how many optional fields are filled) with
-    independent confirmations (other observations already on file for the
-    same customer+modality) instead of trusting the raw extraction-time
-    confidence alone. Does not retroactively bump older observations when a
-    new independent one arrives -- documented simplification."""
+def compute_confidence(completeness_fields: tuple, duplicate_count: int, age_days: float = 0.0) -> ConfidenceLevel:
+    """Combines completeness (how many optional fields are filled), how
+    recent the observation is, and independent confirmations (other
+    observations already on file for the same customer+modality) instead
+    of trusting the raw extraction-time confidence alone.
+
+    `age_days` docks one confidence tier once an observation is older than
+    FRESHNESS_THRESHOLD_DAYS without a new confirmation -- called with 0.0
+    at insert time (brand new), and recomputed with the real age on every
+    read (see `_row_to_observation`), so confidence degrades over time
+    instead of being frozen at whatever it was when first saved. Does not
+    retroactively bump *other* older observations when a new independent
+    one confirms them -- documented simplification."""
     filled = sum(1 for f in completeness_fields if f is not None)
     score = filled + min(duplicate_count, 2)  # cap the confirmation bonus
+    if age_days > FRESHNESS_THRESHOLD_DAYS:
+        score -= 1
     if score >= 3:
         return ConfidenceLevel.HIGH
     if score >= 1:
