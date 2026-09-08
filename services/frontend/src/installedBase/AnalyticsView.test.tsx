@@ -23,7 +23,9 @@ describe("AnalyticsView", () => {
     );
     render(<AnalyticsView />);
     expect(await screen.findByText(/Total de observaciones: 20/)).toBeInTheDocument();
-    expect(screen.getByText("Hospital Old")).toBeInTheDocument();
+    // "Hospital Old" appears twice on purpose: once in the aging-customers
+    // list, once as the customer name inside the refresh-opportunities line.
+    expect(screen.getAllByText("Hospital Old")).toHaveLength(2);
     expect(screen.getByText("Hospital Stale")).toBeInTheDocument();
     expect(screen.getByText(/2 equipos con 10.0 anios promedio en CT/)).toBeInTheDocument();
     expect(screen.getByText("Ninguno")).toBeInTheDocument(); // incomplete_customers is empty

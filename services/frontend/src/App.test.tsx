@@ -36,6 +36,21 @@ describe("App", () => {
             json: async () => ({ token: "tok-1", technician_id: "tech-01", name: "Field User 01" }),
           };
         }
+        if (url.endsWith("/analytics")) {
+          return {
+            ok: true,
+            json: async () => ({
+              total_observations: 0,
+              by_modality: {},
+              by_country: {},
+              by_status: {},
+              aging_customers: [],
+              incomplete_customers: [],
+              stale_customers: [],
+              refresh_opportunities: [],
+            }),
+          };
+        }
         return { ok: true, json: async () => [] };
       })
     );
