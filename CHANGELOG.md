@@ -16,6 +16,7 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 ## Peer (Medium/Large)
 
+- `299d35e` 2026-09-08: QvacRuntime generalizado a completion/multimodal/transcription (VisionPsy Nano, Whisper), `/transcribe`, tests con reload de env para probar los 3 kinds
 - `bbbeb62` 2026-09-07: suite pytest para `/health`, `/capabilities`, `/infer` (modo fallback stub)
 - `dae32d8` 2026-09-07: servicio Peer generico (una imagen para medium y gpu) con `/capabilities`, `/health`, `/infer` real via QVAC `completion()`, heartbeat al Router
 
