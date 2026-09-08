@@ -39,6 +39,7 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 ## Shared / Infra
 
+- `06689b0` 2026-09-08: split de docker-compose en 3 laptops (node-a/b/c) para P2P real, docs/multi-host-demo.md
 - `ab35a24` 2026-09-07: README documenta el reto Philips (Installed Base), componentes, diagrama y puertos actualizados
 - `bdc7ac8` 2026-09-08: `peer-vision`/`peer-voice` en docker-compose + volumen `media-data` compartido + `AUTH_PEPPER`/`INSTALLED_BASE_MEDIA_DIR` en `.env.example`
 - `ef1cc01` 2026-09-07: installed-base en docker-compose (puerto 8005, volumen propio) + `.env.example` + `scripts/run_tests.py`
