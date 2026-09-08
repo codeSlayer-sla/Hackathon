@@ -14,10 +14,10 @@ beforeEach(() => {
 });
 
 describe("App", () => {
-  it("renders the title and defaults to the capture tab", () => {
+  it("renders the title and defaults to the capture tab's PIN login gate", () => {
     render(<App />);
     expect(screen.getByText("Customer Installed Base Intelligence")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/Estoy en Hospital DemoCare Pacific/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("PIN")).toBeInTheDocument();
   });
 
   it("switches to the Mesh Demo tab and shows the empty peers state", async () => {

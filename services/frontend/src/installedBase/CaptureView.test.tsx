@@ -3,11 +3,17 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import CaptureView from "./CaptureView";
 
-describe("CaptureView", () => {
-  it("sends a turn and shows the saved observation", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
+function mockFetchSequence() {
+  return vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/auth/technician")) {
+      return {
+        ok: true,
+        json: async () => ({ token: "tok-123", technician_id: "tech-01", name: "Field User 01" }),
+      };
+    }
+    if (url.endsWith("/capture/turn")) {
+      expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer tok-123");
+      return {
         ok: true,
         json: async () => ({
           session_id: "s1",
@@ -28,14 +34,23 @@ describe("CaptureView", () => {
           ],
           done: true,
         }),
-      })
-    );
+      };
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  });
+}
+
+describe("CaptureView", () => {
+  it("logs in with a PIN, then sends a turn and shows the saved observation", async () => {
+    vi.stubGlobal("fetch", mockFetchSequence());
 
     render(<CaptureView />);
-    await userEvent.type(
-      screen.getByPlaceholderText(/Estoy en Hospital DemoCare Pacific/),
-      "dos MR en Hospital Test"
-    );
+
+    await userEvent.type(screen.getByPlaceholderText("PIN"), "1234");
+    await userEvent.click(screen.getByText("Entrar"));
+
+    const input = await screen.findByPlaceholderText(/Estoy en Hospital DemoCare Pacific/);
+    await userEvent.type(input, "dos MR en Hospital Test");
     await userEvent.click(screen.getByText("Enviar"));
 
     expect(await screen.findByText(/Guardado para Hospital Test/)).toBeInTheDocument();
