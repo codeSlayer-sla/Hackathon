@@ -175,6 +175,12 @@ La primera vez, cada Peer descarga su modelo real vía QVAC (nada gigante):
 servicio sigue respondiendo en modo fallback (ver "Limitaciones") — la demo
 nunca se cae por falta de red o tiempo.
 
+`docker compose up --build` levanta todo en **una sola máquina** (~8-9GB
+de RAM con todo cargado) — práctico para desarrollar, pero no demuestra
+descentralización real. Para repartir la mesh en 2 o 3 laptops físicas de
+verdad (bajando la carga por máquina a ~4-5GB), ver
+[`docs/multi-host-demo.md`](docs/multi-host-demo.md).
+
 ### Opción B — sin Docker
 
 ```bash

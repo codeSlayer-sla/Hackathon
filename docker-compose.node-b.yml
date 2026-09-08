@@ -1,0 +1,33 @@
+# Node B ("Medium Provider") for a real 3-machine demo: just peer-medium.
+# Pure text peer, no shared-file dependency on Node A -- safe on its own
+# machine with zero code changes.
+#
+# Before running, copy .env.node-b.example to .env.node-b and set
+# ROUTER_HOST to Node A's real LAN IP (see docs/multi-host-demo.md).
+name: enterprise-ai-mesh-node-b
+
+services:
+  peer-medium:
+    build:
+      context: .
+      dockerfile: services/peer/Dockerfile
+    environment:
+      NODE_ID: peer-medium
+      ROLE: medium_provider
+      MODEL_TIER: medium
+      MODEL_NAME: LLAMA_3_2_1B_INST_Q4_0
+      PRICE_PER_1K_TOKENS: "0"
+      ROUTER_URL: http://${ROUTER_HOST}:8001
+      PORT: "8000"
+    ports:
+      - "8003:8000"
+    volumes:
+      - qvac-models-medium:/data/qvac-models
+    networks: [mesh]
+
+networks:
+  mesh:
+    driver: bridge
+
+volumes:
+  qvac-models-medium:
