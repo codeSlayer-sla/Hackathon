@@ -11,39 +11,47 @@ SDK local-first de Tether.
 
 Las reglas de la hackathon exigen declarar cualquier base preexistente en
 el README — omitirlo descalifica, sin importar la calidad del resultado.
-Esto es exactamente lo que hay, verificable con `git log` (fechas y hashes
-reales, no aproximados):
+La hackathon es remota, sin sede física, y su ventana oficial de
+construcción de 48 horas es:
 
-- **Construido antes de recibir el reto de Philips** — commits
-  `ee97a05`..`53d35ed`, **2026-09-07 16:12–16:32**: el mesh genérico
-  (contratos compartidos en `shared/`, el servicio `rag`, el servicio
-  `peer` con su integración real a `completion()` de QVAC, el `router`
-  original, el frontend base, `docker-compose.yml` y el framework de
-  tests). Se construyó como infraestructura de propósito general para
-  cualquier misión que asignara la hackathon, sin saber todavía cuál iba a
-  ser.
-- **Construido dentro de la ventana de la hackathon, ya con el reto en
-  mano** — commits `969f42f` en adelante (HEAD actual), desde
-  **2026-09-08 11:35**: todo `services/installed-base` (captura,
-  extracción, duplicados), y luego la extensión de `peer`/`router` a
-  capacidades multimodal/transcripción, auth de técnico, fotos, voz,
-  confidence combinado, freshness, oportunidades de renovación y consultas
-  en lenguaje natural.
+> **9 de septiembre 2026, 08:00 → 11 de septiembre 2026, 08:00**
+
+Todo el contenido de este repositorio hasta el commit `0925176`
+(2026-09-08 12:41) fue construido **antes** de que abriera esa ventana —
+es decir, se declara íntegramente como preparación previa, verificable con
+`git log` (fechas y hashes reales):
+
+- **2026-09-07, 16:12–16:32** (commits `ee97a05`..`53d35ed`): el mesh
+  genérico — contratos compartidos en `shared/`, el servicio `rag`, el
+  servicio `peer` con su integración real a `completion()` de QVAC, el
+  `router` original, el frontend base, `docker-compose.yml` y el
+  framework de tests. Se construyó como infraestructura de propósito
+  general, sin saber todavía qué misión asignaría la hackathon.
+- **2026-09-08, 11:35–12:41** (commits `969f42f`..`0925176`): al recibir
+  el reto de Philips, se agregó `services/installed-base` completo
+  (captura conversacional, extracción, duplicados), la extensión de
+  `peer`/`router` a capacidades multimodal/transcripción, auth de
+  técnico, fotos, voz, confidence combinado, freshness, oportunidades de
+  renovación y consultas en lenguaje natural.
+
+**Cualquier commit con fecha `>= 2026-09-09 08:00` en este repositorio es
+trabajo genuinamente realizado dentro de la ventana oficial de 48 horas**
+— mismo criterio de verificación (`git log`), sin excepción. Todo lo que
+se agregue desde ese momento (verificación real con Docker, pruebas con
+fotos/audio reales, la app nativa de Android, cualquier feature nueva)
+cuenta como el producto construido dentro del plazo.
 
 Nota honesta sobre el criterio **Technical (35%, "uso genuino de QVAC")**:
 el *patrón* de integración con QVAC (`Peer` cargando un modelo real y
-llamando a `completion()`) es parte de la base preexistente. Lo que se
-construyó dentro de la ventana es: la extensión de ese patrón a modelos
-multimodales (fotos) y de transcripción (voz) — capacidades de QVAC
-nuevas que no estaban integradas antes —, el enrutamiento por capacidad
-del Router, y toda la aplicación de dominio (extracción conversacional,
-duplicados, confidence, analytics, `/query`) que consume esa
-infraestructura para resolver el problema real de Philips.
-
-*(Pendiente de confirmar la hora exacta de arranque oficial de las 48
-horas con los organizadores — si arrancó antes de 2026-09-08 11:35, todo
-`services/installed-base` cae dentro de la ventana sin ambigüedad; si
-arrancó después, avisar para ajustar esta sección.)*
+llamando a `completion()`) es parte de la preparación previa. La
+extensión de ese patrón a modelos multimodales (fotos) y de transcripción
+(voz), el enrutamiento por capacidad del Router, y toda la aplicación de
+dominio (extracción conversacional, duplicados, confidence, analytics,
+`/query`) que resuelve el problema real de Philips, también quedan
+declarados como preparación previa bajo esta fecha de corte — no se
+oculta nada, incluso lo que técnicamente podría discutirse como "ya era
+sustancial". La ventana oficial (9 al 11) se usa para profundizar sobre
+esa base: verificación real, pulido, y lo que falte del prototipo.
 
 ## Qué es esto, en una frase
 
