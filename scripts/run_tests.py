@@ -36,6 +36,10 @@ MODULES: dict[str, dict] = {
     "rag": {"cmd": [sys.executable, "-m", "pytest", "tests"], "cwd": ROOT / "services" / "rag"},
     "router": {"cmd": [sys.executable, "-m", "pytest", "tests"], "cwd": ROOT / "services" / "router"},
     "peer": {"cmd": [sys.executable, "-m", "pytest", "tests"], "cwd": ROOT / "services" / "peer"},
+    "installed-base": {
+        "cmd": [sys.executable, "-m", "pytest", "tests"],
+        "cwd": ROOT / "services" / "installed-base",
+    },
     "frontend": {"cmd": [NPM, "test"], "cwd": ROOT / "services" / "frontend"},
 }
 

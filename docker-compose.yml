@@ -64,15 +64,31 @@ services:
     depends_on: [router]
     networks: [mesh]
 
+  installed-base:
+    build:
+      context: .
+      dockerfile: services/installed-base/Dockerfile
+    environment:
+      NODE_ID: installed-base
+      ROUTER_URL: http://router:8000
+      INSTALLED_BASE_DB_PATH: /data/installed_base.db
+    ports:
+      - "8005:8000"
+    volumes:
+      - installed-base-data:/data
+    depends_on: [router]
+    networks: [mesh]
+
   frontend:
     build:
       context: .
       dockerfile: services/frontend/Dockerfile
       args:
         VITE_ROUTER_URL: http://localhost:8001
+        VITE_INSTALLED_BASE_URL: http://localhost:8005
     ports:
       - "5173:5173"
-    depends_on: [router]
+    depends_on: [router, installed-base]
     networks: [mesh]
 
 networks:
@@ -83,3 +99,4 @@ volumes:
   qvac-models-rag:
   qvac-models-medium:
   qvac-models-gpu:
+  installed-base-data:
