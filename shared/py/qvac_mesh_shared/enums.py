@@ -37,3 +37,18 @@ class SettlementStatus(str, Enum):
     NOT_IMPLEMENTED = "not_implemented"
     PENDING = "pending"
     SETTLED = "settled"
+
+
+class ObservationStatus(str, Enum):
+    """How an installed-base equipment observation was obtained."""
+
+    CONFIRMED = "confirmed"
+    REPORTED = "reported"
+    ESTIMATED = "estimated"
+    UNKNOWN = "unknown"
+
+
+class ConfidenceLevel(str, Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"

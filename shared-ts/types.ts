@@ -65,3 +65,61 @@ export interface AskResponse {
   plan: ExecutionPlan;
   usage: UsageEvent;
 }
+
+// --- Customer Installed Base Intelligence (Philips hackathon challenge) ---
+
+export type ObservationStatus = "confirmed" | "reported" | "estimated" | "unknown";
+export type ConfidenceLevel = "high" | "medium" | "low";
+
+export interface EquipmentObservation {
+  id: number | null;
+  customer: string;
+  city?: string;
+  country?: string;
+  modality: string;
+  quantity?: number;
+  brand?: string;
+  model?: string;
+  approx_age_years?: number;
+  estimated_install_year?: number;
+  confidence: ConfidenceLevel;
+  status: ObservationStatus;
+  source: string;
+  observer?: string;
+  visit_date?: string;
+  notes?: string;
+  possible_duplicate_of: number[];
+  created_at: string;
+}
+
+export interface CaptureTurnRequest {
+  session_id?: string;
+  text: string;
+}
+
+export interface CaptureTurnResponse {
+  session_id: string;
+  agent_message: string;
+  saved_observations: EquipmentObservation[];
+  done: boolean;
+}
+
+export interface CustomerSummary {
+  customer: string;
+  country?: string;
+  city?: string;
+  equipment_count: number;
+  modalities: Record<string, number>;
+  last_updated?: string;
+  has_incomplete_info: boolean;
+}
+
+export interface AnalyticsSummary {
+  total_observations: number;
+  by_modality: Record<string, number>;
+  by_country: Record<string, number>;
+  by_status: Record<string, number>;
+  average_age_years?: number;
+  aging_customers: string[];
+  incomplete_customers: string[];
+}

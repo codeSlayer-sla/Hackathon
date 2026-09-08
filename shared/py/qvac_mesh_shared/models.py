@@ -6,9 +6,11 @@ from pydantic import BaseModel, Field
 
 from .enums import (
     ComplexityLevel,
+    ConfidenceLevel,
     ExecutionMode,
     ModelTier,
     NodeRole,
+    ObservationStatus,
     SensitivityClass,
     SettlementStatus,
 )
@@ -115,3 +117,61 @@ class AskResponse(BaseModel):
     rag: RagResult
     plan: ExecutionPlan
     usage: UsageEvent
+
+
+# ---------------------------------------------------------------------------
+# Customer Installed Base Intelligence (Philips hackathon challenge)
+# ---------------------------------------------------------------------------
+
+
+class EquipmentObservation(BaseModel):
+    id: int | None = None
+    customer: str
+    city: str | None = None
+    country: str | None = None
+    modality: str
+    quantity: int | None = None
+    brand: str | None = None
+    model: str | None = None
+    approx_age_years: float | None = None
+    estimated_install_year: int | None = None
+    confidence: ConfidenceLevel = ConfidenceLevel.LOW
+    status: ObservationStatus = ObservationStatus.UNKNOWN
+    source: str = "text"
+    observer: str | None = None
+    visit_date: str | None = None
+    notes: str | None = None
+    possible_duplicate_of: list[int] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class CaptureTurnRequest(BaseModel):
+    session_id: str | None = None
+    text: str
+
+
+class CaptureTurnResponse(BaseModel):
+    session_id: str
+    agent_message: str
+    saved_observations: list[EquipmentObservation] = Field(default_factory=list)
+    done: bool = False
+
+
+class CustomerSummary(BaseModel):
+    customer: str
+    country: str | None = None
+    city: str | None = None
+    equipment_count: int
+    modalities: dict[str, int] = Field(default_factory=dict)
+    last_updated: datetime | None = None
+    has_incomplete_info: bool = False
+
+
+class AnalyticsSummary(BaseModel):
+    total_observations: int
+    by_modality: dict[str, int] = Field(default_factory=dict)
+    by_country: dict[str, int] = Field(default_factory=dict)
+    by_status: dict[str, int] = Field(default_factory=dict)
+    average_age_years: float | None = None
+    aging_customers: list[str] = Field(default_factory=list)
+    incomplete_customers: list[str] = Field(default_factory=list)

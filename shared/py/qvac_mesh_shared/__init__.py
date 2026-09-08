@@ -2,15 +2,22 @@
 
 from .enums import (
     ComplexityLevel,
+    ConfidenceLevel,
     ExecutionMode,
     ModelTier,
     NodeRole,
+    ObservationStatus,
     SensitivityClass,
     SettlementStatus,
 )
 from .models import (
+    AnalyticsSummary,
     AskRequest,
     AskResponse,
+    CaptureTurnRequest,
+    CaptureTurnResponse,
+    CustomerSummary,
+    EquipmentObservation,
     ExecutionPlan,
     InferenceRequest,
     InferenceResult,
@@ -23,13 +30,20 @@ from .models import (
 
 __all__ = [
     "ComplexityLevel",
+    "ConfidenceLevel",
     "ExecutionMode",
     "ModelTier",
     "NodeRole",
+    "ObservationStatus",
     "SensitivityClass",
     "SettlementStatus",
+    "AnalyticsSummary",
     "AskRequest",
     "AskResponse",
+    "CaptureTurnRequest",
+    "CaptureTurnResponse",
+    "CustomerSummary",
+    "EquipmentObservation",
     "ExecutionPlan",
     "InferenceRequest",
     "InferenceResult",
