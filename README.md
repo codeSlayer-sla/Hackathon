@@ -65,61 +65,108 @@ ese primer consumidor real — un servicio de dominio nuevo que usa un Peer
 para la extracción con IA, sin tocar RAG/Router/Peer (que siguen siendo
 genéricos, como se diseñaron).
 
-Qué hace hoy (cubre el "Minimum Viable Prototype" del brief):
+Qué hace hoy (cubre el "Minimum Viable Prototype" del brief **y** los 5
+stretch goals que habíamos dejado pendientes):
 
-- `POST /capture/turn`: recibe una observación en lenguaje natural, la
-  manda a un Peer real vía QVAC para extraer cliente/ciudad/país/equipo
-  (modalidad, cantidad, marca, modelo, antigüedad), pregunta lo que falte
-  en un follow-up, y guarda cuando está completa.
+- `POST /capture/turn` (texto) y `POST /capture/turn/voice` (audio): reciben
+  una observación, la mandan al Router para extraer cliente/ciudad/país/
+  equipo (modalidad, cantidad, marca, modelo, antigüedad), preguntan lo que
+  falte en un follow-up, y guardan cuando está completa. Ambas requieren un
+  técnico autenticado (ver Auth abajo).
+- `POST /photos` + cola de revisión: el técnico sube una foto y sigue
+  trabajando de inmediato (no espera); un loop en background la manda al
+  peer de visión, y el técnico valida sí/no después en `GET /photos` +
+  `POST /photos/{id}/validate` — foto y etiqueta final quedan guardadas
+  para siempre (dataset de reentrenamiento futuro).
 - Detecta posibles duplicados (mismo cliente normalizado + misma modalidad)
-  al guardar.
+  al guardar, y calcula un **confidence combinado** (completitud de campos +
+  cantidad de confirmaciones independientes), no solo el valor crudo que
+  devuelve el modelo.
+- `GET /analytics` incluye alertas de **frescura** (clientes sin
+  observaciones nuevas hace más de 90 días) y **oportunidades de
+  renovación** (clientes con equipo viejo, con la razón explicada).
+- `POST /query`: preguntas en lenguaje natural ("clientes en Panamá con MR")
+  se traducen a un filtro estructurado (vía el mismo Router) y se aplican
+  en Python contra el dataset — nunca se le pide a un LLM que genere SQL.
 - Persiste en SQLite con estado (`confirmed | reported | estimated |
   unknown`) y confianza (`high | medium | low`) por observación.
 - `GET /customers` / `GET /customers/{id}`: vista Customer 360.
-- `GET /analytics`: agregación entre clientes (por modalidad, país, status,
-  edad promedio, clientes con equipo viejo, clientes con info incompleta).
 - Arranca con las 20 observaciones dummy del Excel del reto ya cargadas
   (`app/seed_data.py`), así el dashboard nunca arranca vacío.
-- Frontend: pestañas "Capturar visita", "Clientes" y "Analytics" en
-  `services/frontend/src/installedBase/`.
+- Frontend web (`services/frontend/src/installedBase/`): pestañas
+  "Capturar visita" (con login por PIN), "Clientes" y "Analytics" — sirve
+  como demo/referencia mientras se construye la app nativa real.
 
-Qué queda como stretch goal del propio brief, no construido en esta pasada:
-captura por voz, captura asistida por foto de etiquetas, confidence scoring
-combinando completitud + antigüedad + confirmaciones independientes,
-alertas de información no verificada recientemente, consultas en lenguaje
-natural libres sobre el dataset, e identificación automática de
-oportunidades de renovación.
+Nota técnica: la extracción/identificación sigue siendo prompting + parseo
+defensivo de JSON, no decodificación forzada por schema (`response_format`
+de `completion()` queda como mejora futura, no verificada a tiempo).
 
-Nota técnica: la extracción usa prompting + parseo defensivo de JSON, no
-decodificación forzada por schema. `completion()` del SDK acepta un
-parámetro `response_format` que podría forzar JSON válido — su forma exacta
-no se verificó a tiempo contra la versión instalada, así que queda como
-mejora documentada en `services/installed-base/app/extraction.py`.
+## Arquitectura multi-nodo: técnicos como nodos, app nativa aparte
+
+La visión real del producto: cada técnico tiene una app nativa (React
+Native/Flutter — **se construye en otro workstream, no en este repo**) que
+funciona como un nodo de la mesh. Este repo deja listo el backend y el
+contrato REST para que esa app se integre:
+
+- **El Router decide el modelo, siempre.** Ningún servicio de dominio
+  (`installed-base`) descubre o llama a un Peer directamente — todo pasa
+  por `POST {ROUTER_URL}/infer {capability: "completion"|"multimodal"|
+  "transcription", ...}`. El Router elige un peer que tenga esa capacidad
+  (`PeerCapability.capabilities`) y lo llama. Esto es cierto para texto,
+  fotos y audio por igual.
+- **Auth de técnico por PIN**: `POST /auth/technician {pin}` devuelve un
+  token; las rutas que crean observaciones (`/capture/turn`,
+  `/capture/turn/voice`, `/photos`, `/photos/{id}/validate`) lo exigen vía
+  `Authorization: Bearer <token>`, y el campo `observer` de cada
+  observación sale del token, nunca de algo que el cliente pueda falsear.
+  **Es intencionalmente el mínimo viable**: PIN con sha256+pepper (no
+  bcrypt/argon2), sin rate-limiting ni bloqueo por intentos fallidos,
+  tokens en memoria (se pierden si el servicio reinicia). No usar así en
+  producción real sin endurecerlo.
+- **Offline-first / store-and-forward**: la app nativa guarda en su propio
+  SQLite local cuando no hay red, y reintenta contra estos mismos
+  endpoints al recuperar conexión. Para que un reintento no duplique una
+  observación, `CaptureTurnRequest` (y el body de `/photos/{id}/validate`)
+  aceptan un `client_event_id` generado por el cliente — el servidor cachea
+  la respuesta y la devuelve tal cual si ve el mismo id de nuevo. No se
+  construyó un endpoint de batch-sync genérico todavía (nadie definió su
+  forma exacta, y la app ni existe) — el patrón recomendado es reintentar
+  estos mismos endpoints uno por uno con su `client_event_id`.
+- **¿Se puede correr todo esto en un VPS cloud?** Sí. El único requisito
+  del reto es que la inferencia corra on-device o delegada P2P *entre nodos
+  QVAC* — nunca a una API de IA de terceros en la nube. Un VPS que vos
+  controlás, corriendo QVAC como uno de los peers de la mesh, es
+  exactamente eso: un nodo QVAC autorizado más, no una API cloud externa.
+  La app del técnico puede vivir liviana (captura + cola offline) mientras
+  el cómputo pesado (visión, voz, extracción) corre en un VPS con más
+  RAM/GPU — sigue siendo 100% QVAC de punta a punta.
 
 ## Componentes
 
 ```
-Frontend --POST /ask--> Router --POST /search--> RAG
-   |                       |
-   |                       +--POST /infer--> Peer (medium | gpu)
-   |                                             |
-   |                                         QVAC local (completion real)
-   |
-   +--POST /capture/turn--> Installed Base --GET /peers--> Router
-                                  |                            |
-                                  +--------POST /infer----------+ (mismo Peer)
-                                  |
-                              SQLite (observaciones)
+Frontend --POST /ask-------------> Router --POST /search--> RAG
+   |                                  |
+   +--POST /capture/turn(/voice)-->   |
+   +--POST /photos, /query-------->  Installed Base
+                                        |
+                                        +--POST /infer {capability}--> Router
+                                                                          |
+                                                        +-----------------+-----------------+
+                                                        |                 |                 |
+                                                  Peer (completion)  Peer (multimodal)  Peer (transcription)
+                                                  peer-medium/gpu     peer-vision         peer-voice
+                                                        |                 |                 |
+                                                    QVAC local        QVAC local         QVAC local
 ```
 
 | Componente | Carpeta | Qué hace hoy |
 |---|---|---|
 | **RAG** | `services/rag` | Ingesta 4 documentos demo y los indexa con QVAC real (`rag()`/`RagRequest` de `tetherto-qvac-sdk`). `POST /search` devuelve contexto + fuentes + sensibilidad. Si el modelo de embeddings no está disponible, cae a búsqueda por keywords sobre los mismos docs — nunca se cae la demo. |
-| **Router** | `services/router` | Registro de peers por auto-anuncio/heartbeat (sin IPs hardcodeadas), una política de decisión simple (`app/policy.py`), y `POST /ask` que ejecuta el flujo completo: RAG → elegir peer → inferencia → `UsageEvent`. |
-| **Peer** | `services/peer` | Una sola imagen usada dos veces (`peer-medium`, `peer-gpu`), diferenciada solo por variables de entorno. Corre un modelo QVAC real (`completion()`) y expone `/capabilities`, `/health`, `/infer`. Si el modelo no cargó, responde un stub explícito en vez de fallar. |
-| **Installed Base** | `services/installed-base` | El reto de Philips (ver arriba): captura conversacional, extracción con IA vía un Peer, detección de duplicados, SQLite, Customer 360 y analytics. |
-| **Frontend** | `services/frontend` | React/Vite con pestañas: Capturar visita / Clientes / Analytics (Installed Base) + Mesh Demo (el chat genérico original). Tipado contra `shared-ts/types.ts`. |
-| **Shared** | `shared/py/qvac_mesh_shared` | Contratos Pydantic (`ExecutionPlan`, `PeerCapability`, `UsageEvent`, `RagResult`, `EquipmentObservation`, etc.) que usan todos los servicios. Paquete pip instalable (`pip install -e shared/py`). Espejo en TypeScript en `shared-ts/types.ts`. |
+| **Router** | `services/router` | Registro de peers por auto-anuncio/heartbeat (sin IPs hardcodeadas). `POST /ask` (RAG + completion, flujo original) y `POST /infer` (nuevo: cualquier capacidad — completion/multimodal/transcription — para cualquier servicio de dominio). Es el único lugar que decide qué peer atiende cada pedido. |
+| **Peer** | `services/peer` | Una imagen genérica, instanciada 4 veces (`peer-medium`, `peer-gpu`: completion; `peer-vision`: multimodal/VisionPsy Nano; `peer-voice`: transcription/Whisper), diferenciadas solo por variables de entorno (`MODEL_KIND`, `MODEL_NAME`, ...). Expone `/capabilities`, `/health`, `/infer`, `/transcribe`. Si el modelo no cargó, responde un stub explícito en vez de fallar. |
+| **Installed Base** | `services/installed-base` | El reto de Philips (ver arriba): captura por texto/voz/foto, auth de técnico por PIN, detección de duplicados, confidence combinado, freshness/oportunidades, consultas en lenguaje natural, SQLite, Customer 360 y analytics. |
+| **Frontend** | `services/frontend` | React/Vite con pestañas: Capturar visita (con login por PIN) / Clientes / Analytics (Installed Base) + Mesh Demo (el chat genérico original). Tipado contra `shared-ts/types.ts`. |
+| **Shared** | `shared/py/qvac_mesh_shared` | Contratos Pydantic (`ExecutionPlan`, `PeerCapability`, `UsageEvent`, `RagResult`, `EquipmentObservation`, `RouterInferRequest/Result`, `TranscribeRequest/Result`, etc.) que usan todos los servicios. Paquete pip instalable (`pip install -e shared/py`). Espejo en TypeScript en `shared-ts/types.ts`. |
 
 ## Arquitectura a la que apuntamos
 
@@ -236,6 +283,44 @@ Node.js vía NodeSource) no debería reproducirse.
 `QVAC_WORKER_PATH` a esa instalación (workaround documentado por el propio
 SDK).
 
+**9. Auth de técnico es el mínimo viable, no producción.**
+PIN + sha256/pepper, tokens en memoria, sin rate-limiting ni rotación.
+→ *Cómo abordarla*: antes de un uso real, mover a bcrypt/argon2, persistir
+tokens/sesiones fuera de memoria, agregar rate-limiting y bloqueo por
+intentos fallidos, y un panel de administración de técnicos en vez del
+diccionario fijo en `services/installed-base/app/auth.py`.
+
+**10. VisionPsy Nano y Whisper no se descargaron/probaron con inferencia
+real en esta sandbox** (mismo motivo que los peers de texto: RAM limitada
+en la máquina de desarrollo). El código de `peer-vision`/`peer-voice` está
+completo y verificado contra el SDK real (signatures, shapes de request)
+pero no contra un modelo cargado de verdad.
+→ *Cómo abordarla*: correr `docker compose up peer-vision peer-voice` con
+Docker sano y probar `/photos` y `/capture/turn/voice` con fotos/audio
+reales de equipos.
+
+**11. Sin fine-tuning real del modelo de visión.**
+Las fotos + etiqueta confirmada (o corregida por el técnico) quedan
+guardadas en `photo_queue` — es el dataset, no el entrenamiento.
+→ *Cómo abordarla*: cuando haya suficientes fotos etiquetadas, exportar
+`photo_queue` y correr un fine-tune real de VisionPsy Nano (o el VLM que se
+elija) vía QVAC.
+
+**12. No hay endpoint de batch-sync genérico para offline.**
+La app nativa (cuando exista) reintenta los endpoints uno por uno con
+`client_event_id` para evitar duplicados — no hay un `/sync/batch` que
+reciba un lote de eventos en una sola llamada.
+→ *Cómo abordarla*: definirlo junto con quien construya la app nativa,
+una vez se sepa su forma real de encolar eventos localmente.
+
+**13. Confidence no se recalcula retroactivamente.**
+Si llega una tercera observación independiente confirmando un equipo, las
+dos anteriores no suben de confidence — solo la nueva se beneficia de
+haber encontrado duplicados previos.
+→ *Cómo abordarla*: en `store.insert()`, además de calcular el confidence
+de la fila nueva, hacer un `UPDATE` a los ids en `possible_duplicate_of`
+recalculando el suyo con el conteo actualizado.
+
 ## Cómo levantar el entorno
 
 ```bash
@@ -248,12 +333,16 @@ docker compose up --build
 - Peer medium: http://localhost:8003
 - Peer GPU: http://localhost:8004
 - Installed Base: http://localhost:8005 (docs en `/docs`)
+- Peer vision (fotos): http://localhost:8006
+- Peer voice (audio): http://localhost:8007
 
-La primera vez, `peer-medium` y `peer-gpu` descargan un modelo pequeño real
-(`LLAMA_3_2_1B_INST_Q4_0`, ~770MB) y RAG descarga un modelo de embeddings
-(`EMBEDDINGGEMMA_300M_Q4_0`, ~280MB) vía QVAC. Mientras se descarga, cada
-servicio sigue funcionando en modo fallback (ver "Limitaciones") — así nunca
-se cae la demo por falta de red/tiempo.
+La primera vez, cada Peer descarga su modelo real vía QVAC:
+`peer-medium`/`peer-gpu` -> `LLAMA_3_2_1B_INST_Q4_0` (~770MB), RAG ->
+`EMBEDDINGGEMMA_300M_Q4_0` (~280MB), `peer-vision` ->
+`VISIONPSY_NANO_460M_MULTIMODAL_Q8_0` + su mmproj (chico, ~460M params),
+`peer-voice` -> `WHISPER_TINY` (~78MB, el más liviano de todos). Mientras
+se descarga, cada servicio sigue funcionando en modo fallback (ver
+"Limitaciones") — así nunca se cae la demo por falta de red/tiempo.
 
 Sin Docker, cada servicio corre igual con un venv (`pip install -e shared/py
 -r services/<x>/requirements.txt && uvicorn app.main:app`) más `npm install
