@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { CaptureTurnResponse } from "@shared/types";
-import { captureTurn, loginWithPin } from "../api/installedBase";
+import { captureTurn } from "../api/installedBase";
 
 interface TurnEntry {
   text: string;
@@ -8,30 +8,18 @@ interface TurnEntry {
   error?: string;
 }
 
-export default function CaptureView() {
-  const [pin, setPin] = useState("");
-  const [token, setToken] = useState<string | null>(null);
-  const [technicianName, setTechnicianName] = useState<string | null>(null);
-  const [loginError, setLoginError] = useState<string | null>(null);
+interface Props {
+  token: string;
+}
 
+export default function CaptureView({ token }: Props) {
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [text, setText] = useState("");
   const [history, setHistory] = useState<TurnEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
-  async function handleLogin() {
-    setLoginError(null);
-    try {
-      const auth = await loginWithPin(pin);
-      setToken(auth.token);
-      setTechnicianName(auth.name);
-    } catch (err) {
-      setLoginError(String(err));
-    }
-  }
-
   async function handleSend() {
-    if (!text.trim() || !token) return;
+    if (!text.trim()) return;
     const sent = text;
     setText("");
     setLoading(true);
@@ -47,36 +35,11 @@ export default function CaptureView() {
     }
   }
 
-  if (!token) {
-    return (
-      <div>
-        <p style={{ color: "#666" }}>
-          Ingresa tu PIN de tecnico para empezar a capturar (la app nativa del tecnico hara este
-          mismo login; esto es solo la demo web).
-        </p>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            style={{ padding: 8 }}
-            type="password"
-            inputMode="numeric"
-            value={pin}
-            onChange={(e) => setPin(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-            placeholder="PIN"
-          />
-          <button onClick={handleLogin}>Entrar</button>
-        </div>
-        {loginError && <p style={{ color: "crimson" }}>{loginError}</p>}
-      </div>
-    );
-  }
-
   return (
     <div>
       <p style={{ color: "#666" }}>
-        Conectado como <strong>{technicianName}</strong>. Describi lo que viste en la visita, como
-        se lo contarias a un colega. El asistente pregunta lo que falte y guarda la observacion
-        cuando este completa.
+        Describi lo que viste en la visita, como se lo contarias a un colega. El asistente
+        pregunta lo que falte y guarda la observacion cuando este completa.
       </p>
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <input

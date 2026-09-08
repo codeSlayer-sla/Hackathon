@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import AnalyticsView from "./AnalyticsView";
 
 describe("AnalyticsView", () => {
-  it("renders the aggregated analytics returned by the API", async () => {
+  it("renders the aggregated analytics returned by the API, including freshness and opportunities", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -16,12 +16,16 @@ describe("AnalyticsView", () => {
           average_age_years: 6.5,
           aging_customers: ["Hospital Old"],
           incomplete_customers: [],
+          stale_customers: ["Hospital Stale"],
+          refresh_opportunities: [{ customer: "Hospital Old", reason: "2 equipos con 10.0 anios promedio en CT" }],
         }),
       })
     );
     render(<AnalyticsView />);
     expect(await screen.findByText(/Total de observaciones: 20/)).toBeInTheDocument();
     expect(screen.getByText("Hospital Old")).toBeInTheDocument();
-    expect(screen.getByText("Ninguno")).toBeInTheDocument();
+    expect(screen.getByText("Hospital Stale")).toBeInTheDocument();
+    expect(screen.getByText(/2 equipos con 10.0 anios promedio en CT/)).toBeInTheDocument();
+    expect(screen.getByText("Ninguno")).toBeInTheDocument(); // incomplete_customers is empty
   });
 });

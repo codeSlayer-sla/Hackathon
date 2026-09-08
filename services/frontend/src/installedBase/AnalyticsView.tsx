@@ -52,7 +52,7 @@ export default function AnalyticsView() {
 
       <p>Edad promedio estimada: {analytics.average_age_years ?? "N/D"} anios</p>
 
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 16 }}>
         <div>
           <h4>Clientes con equipo antiguo (8+ anios)</h4>
           {analytics.aging_customers.length === 0 ? (
@@ -73,6 +73,35 @@ export default function AnalyticsView() {
             <ul>
               {analytics.incomplete_customers.map((c) => (
                 <li key={c}>{c}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+        <div>
+          <h4>Sin verificar recientemente (90+ dias)</h4>
+          {analytics.stale_customers.length === 0 ? (
+            <p>Ninguno</p>
+          ) : (
+            <ul>
+              {analytics.stale_customers.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div>
+          <h4>Oportunidades de renovacion</h4>
+          {analytics.refresh_opportunities.length === 0 ? (
+            <p>Ninguna</p>
+          ) : (
+            <ul>
+              {analytics.refresh_opportunities.map((o) => (
+                <li key={o.customer}>
+                  <strong>{o.customer}</strong>: {o.reason}
+                </li>
               ))}
             </ul>
           )}

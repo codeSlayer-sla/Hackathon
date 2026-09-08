@@ -139,3 +139,37 @@ export interface TechnicianAuthResponse {
   technician_id: string;
   name: string;
 }
+
+export interface PhotoRecord {
+  id: number;
+  photo_path: string;
+  customer?: string;
+  technician_id?: string;
+  status: string; // pending | needs_review | confirmed | rejected | failed
+  guessed_modality?: string;
+  guessed_brand?: string;
+  guessed_model?: string;
+  guessed_confidence?: string;
+  corrected_label?: string;
+  linked_observation_id?: number;
+  created_at: string;
+  processed_at?: string;
+}
+
+export interface PhotoCorrection {
+  modality: string;
+  brand?: string;
+  model?: string;
+}
+
+export interface PhotoValidateRequest {
+  confirmed: boolean;
+  correction?: PhotoCorrection;
+  client_event_id?: string;
+}
+
+export interface NaturalLanguageQueryResponse {
+  question: string;
+  interpreted_filter: Record<string, unknown>;
+  results: EquipmentObservation[];
+}

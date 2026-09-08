@@ -4,6 +4,9 @@ import type {
   CaptureTurnResponse,
   CustomerSummary,
   EquipmentObservation,
+  NaturalLanguageQueryResponse,
+  PhotoRecord,
+  PhotoValidateRequest,
   TechnicianAuthResponse,
 } from "@shared/types";
 
@@ -57,6 +60,58 @@ export async function getAnalytics(): Promise<AnalyticsSummary> {
   const res = await fetch(`${INSTALLED_BASE_URL}/analytics`);
   if (!res.ok) {
     throw new Error(`/analytics failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function uploadPhoto(file: File, customer: string, token: string): Promise<PhotoRecord> {
+  const form = new FormData();
+  form.append("photo", file);
+  form.append("customer", customer);
+  const res = await fetch(`${INSTALLED_BASE_URL}/photos`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(`/photos failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json();
+}
+
+export async function listPhotos(status?: string): Promise<PhotoRecord[]> {
+  const url = status ? `${INSTALLED_BASE_URL}/photos?status=${status}` : `${INSTALLED_BASE_URL}/photos`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`/photos failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function validatePhoto(
+  photoId: number,
+  request: PhotoValidateRequest,
+  token: string
+): Promise<EquipmentObservation> {
+  const res = await fetch(`${INSTALLED_BASE_URL}/photos/${photoId}/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    throw new Error(`/photos/${photoId}/validate failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json();
+}
+
+export async function queryDataset(question: string): Promise<NaturalLanguageQueryResponse> {
+  const res = await fetch(`${INSTALLED_BASE_URL}/query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  if (!res.ok) {
+    throw new Error(`/query failed: ${res.status} ${await res.text()}`);
   }
   return res.json();
 }
