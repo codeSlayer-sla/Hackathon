@@ -26,6 +26,8 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 ## Installed Base (Philips Challenge)
 
+- `821b16f` 2026-09-07: servicio Installed Base -- captura conversacional (`/capture/turn`), extraccion via Peer real, deteccion de duplicados, SQLite con seed de las 20 filas dummy, Customer 360 (`/customers`), analytics (`/analytics`)
+
 ## Shared / Infra
 
 - `969f42f` 2026-09-07: contratos Installed Base (ObservationStatus, ConfidenceLevel, EquipmentObservation, CaptureTurnRequest/Response, CustomerSummary, AnalyticsSummary) + espejo TS
