@@ -34,6 +34,7 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 - `ab35a24` 2026-09-07: README documenta el reto Philips (Installed Base), componentes, diagrama y puertos actualizados
 - `ef1cc01` 2026-09-07: installed-base en docker-compose (puerto 8005, volumen propio) + `.env.example` + `scripts/run_tests.py`
+- `42ff11f` 2026-09-08: contratos de capability-routing (PeerCapability.capabilities, RouterInferRequest/Result, TranscribeRequest/Result), image_path multimodal, client_event_id offline-sync, freshness/opportunities en AnalyticsSummary
 - `969f42f` 2026-09-07: contratos Installed Base (ObservationStatus, ConfidenceLevel, EquipmentObservation, CaptureTurnRequest/Response, CustomerSummary, AnalyticsSummary) + espejo TS
 - `6b3f3a5` 2026-09-07: README reescrito -- que es la app, componentes, arquitectura objetivo, limitaciones y como abordarlas
 - `dbb444b` 2026-09-07: `scripts/run_tests.py` -- corre todos los modulos o un subconjunto via `--modules`, mismo runner para pytest y npm/vitest
