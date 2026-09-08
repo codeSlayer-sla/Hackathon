@@ -13,6 +13,8 @@ class NodeSettings(BaseSettings):
     role: str = "enterprise"  # enterprise | medium_provider | large_provider
     model_tier: str = "small"  # small | medium | large
     model_name: str = "LLAMA_3_2_1B_INST_Q4_0"
+    model_kind: str = "completion"  # completion | multimodal | transcription
+    model_projection_name: str | None = None  # multimodal only: the mmproj-* model
     price_per_1k_tokens: float = 0.0
     port: int = 8000
 

@@ -95,6 +95,7 @@ export interface EquipmentObservation {
 export interface CaptureTurnRequest {
   session_id?: string;
   text: string;
+  client_event_id?: string;
 }
 
 export interface CaptureTurnResponse {
@@ -114,6 +115,11 @@ export interface CustomerSummary {
   has_incomplete_info: boolean;
 }
 
+export interface RefreshOpportunity {
+  customer: string;
+  reason: string;
+}
+
 export interface AnalyticsSummary {
   total_observations: number;
   by_modality: Record<string, number>;
@@ -122,4 +128,14 @@ export interface AnalyticsSummary {
   average_age_years?: number;
   aging_customers: string[];
   incomplete_customers: string[];
+  stale_customers: string[];
+  refresh_opportunities: RefreshOpportunity[];
+}
+
+// Local to the installed-base service (not a cross-service contract, but
+// mirrored here for the web demo's login gate).
+export interface TechnicianAuthResponse {
+  token: string;
+  technician_id: string;
+  name: string;
 }

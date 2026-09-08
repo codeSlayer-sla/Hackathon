@@ -57,6 +57,10 @@ class PeerCapability(BaseModel):
     available: bool = True
     price_per_1k_tokens: float = 0.0
     last_seen: datetime = Field(default_factory=_utcnow)
+    # "completion" | "multimodal" | "transcription" -- what kind of QVAC
+    # model this peer has loaded. Defaults to completion-only so existing
+    # peer-medium/peer-gpu configs don't need to change.
+    capabilities: list[str] = Field(default_factory=lambda: ["completion"])
 
 
 class ExecutionPlan(BaseModel):
@@ -72,6 +76,10 @@ class InferenceRequest(BaseModel):
     request_id: str
     query: str
     context: str | None = None
+    # Set only for a "multimodal" peer: path to an image file the peer's
+    # own filesystem can read (see the media-data volume shared between
+    # installed-base and peer-vision).
+    image_path: str | None = None
 
 
 class InferenceResult(BaseModel):
@@ -83,6 +91,41 @@ class InferenceResult(BaseModel):
     tokens_in: int
     tokens_out: int
     cost: float
+
+
+class TranscribeRequest(BaseModel):
+    request_id: str
+    audio_path: str
+
+
+class TranscribeResult(BaseModel):
+    request_id: str
+    node_id: str
+    model: str
+    text: str
+    duration_ms: float
+
+
+class RouterInferRequest(BaseModel):
+    """The one entry point any service uses for *any* inference need --
+    the Router decides which peer (by capability) handles it, so domain
+    services never discover/call a Peer directly."""
+
+    request_id: str | None = None
+    capability: str  # "completion" | "multimodal" | "transcription"
+    query: str | None = None
+    context: str | None = None
+    image_path: str | None = None
+    audio_path: str | None = None
+
+
+class RouterInferResult(BaseModel):
+    request_id: str
+    node_id: str
+    model: str
+    capability: str
+    text: str
+    duration_ms: float
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +191,11 @@ class EquipmentObservation(BaseModel):
 class CaptureTurnRequest(BaseModel):
     session_id: str | None = None
     text: str
+    # Client-generated id (e.g. a UUID the mobile app creates when it first
+    # queues this turn locally). Lets a retried offline-sync submission be
+    # detected and answered from cache instead of saving the observation
+    # twice.
+    client_event_id: str | None = None
 
 
 class CaptureTurnResponse(BaseModel):
@@ -167,6 +215,11 @@ class CustomerSummary(BaseModel):
     has_incomplete_info: bool = False
 
 
+class RefreshOpportunity(BaseModel):
+    customer: str
+    reason: str
+
+
 class AnalyticsSummary(BaseModel):
     total_observations: int
     by_modality: dict[str, int] = Field(default_factory=dict)
@@ -175,3 +228,15 @@ class AnalyticsSummary(BaseModel):
     average_age_years: float | None = None
     aging_customers: list[str] = Field(default_factory=list)
     incomplete_customers: list[str] = Field(default_factory=list)
+    stale_customers: list[str] = Field(default_factory=list)
+    refresh_opportunities: list[RefreshOpportunity] = Field(default_factory=list)
+
+
+class NaturalLanguageQueryRequest(BaseModel):
+    question: str
+
+
+class NaturalLanguageQueryResponse(BaseModel):
+    question: str
+    interpreted_filter: dict
+    results: list[EquipmentObservation]
