@@ -43,6 +43,7 @@ de este monorepo.
 
 ## Shared / Infra
 
+- `30c7a72` 2026-09-08: `apps/technician-app` cableado en `scripts/run_tests.py` + README/CHANGELOG actualizados para reflejar la app movil real (Expo/React Native)
 - `06689b0` 2026-09-08: split de docker-compose en 3 laptops (node-a/b/c) para P2P real, docs/multi-host-demo.md
 - `ab35a24` 2026-09-07: README documenta el reto Philips (Installed Base), componentes, diagrama y puertos actualizados
 - `bdc7ac8` 2026-09-08: `peer-vision`/`peer-voice` en docker-compose + volumen `media-data` compartido + `AUTH_PEPPER`/`INSTALLED_BASE_MEDIA_DIR` en `.env.example`
