@@ -7,5 +7,6 @@ arriba.
 
 ## Setup
 
+- `69728ab` 2026-09-08: `bare-pack` movido de devDependencies a dependencies -- EAS Build lo necesita en el paso de prebuild de QVAC y no instala devDependencies en el perfil `preview`
 - `51af261` 2026-09-08: EAS Build configurado (`eas.json`, `android.package`, `extra.eas.projectId`) para compilar el APK Android en la nube sin Android Studio local
 - `8df8643` 2026-09-08: scaffold inicial (Expo SDK 54 + TypeScript), `@qvac/sdk` instalado y configurado (expo-plugin, minSdkVersion 29, `qvac.config.json` con `llamacpp-completion`), smoke test end-to-end del ciclo de vida de QVAC (descarga -> carga -> inferencia local) con Jest + React Native Testing Library
