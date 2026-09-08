@@ -48,14 +48,68 @@ propósito — son *mission-dependent* y se afinan cuando se asignen las
 tareas. Ver "Limitaciones" más abajo y `CHANGELOG.md` para el historial de
 cada componente.
 
+## Primer reto: Customer Installed Base Intelligence (Philips)
+
+Ya llegó la primera misión concreta de la hackathon. Philips pide un
+prototipo que convierta lo que un colaborador de campo observa en un
+hospital ("dos resonadores y un tomógrafo, uno de los MR parece de unos
+ocho años") en datos estructurados y confiables sobre la base instalada de
+equipos — con captura tan simple como una conversación, y con **requisito
+obligatorio y descalificante**: la inferencia debe correr en el dispositivo
+o delegada P2P vía QVAC, nunca en una API cloud.
+
+Esto es exactamente lo que el Enterprise AI Mesh ya garantiza por
+construcción: cualquier consumidor que solo le hable al Router/Peer hereda
+"inferencia local/P2P, nunca cloud" gratis. `services/installed-base` es
+ese primer consumidor real — un servicio de dominio nuevo que usa un Peer
+para la extracción con IA, sin tocar RAG/Router/Peer (que siguen siendo
+genéricos, como se diseñaron).
+
+Qué hace hoy (cubre el "Minimum Viable Prototype" del brief):
+
+- `POST /capture/turn`: recibe una observación en lenguaje natural, la
+  manda a un Peer real vía QVAC para extraer cliente/ciudad/país/equipo
+  (modalidad, cantidad, marca, modelo, antigüedad), pregunta lo que falte
+  en un follow-up, y guarda cuando está completa.
+- Detecta posibles duplicados (mismo cliente normalizado + misma modalidad)
+  al guardar.
+- Persiste en SQLite con estado (`confirmed | reported | estimated |
+  unknown`) y confianza (`high | medium | low`) por observación.
+- `GET /customers` / `GET /customers/{id}`: vista Customer 360.
+- `GET /analytics`: agregación entre clientes (por modalidad, país, status,
+  edad promedio, clientes con equipo viejo, clientes con info incompleta).
+- Arranca con las 20 observaciones dummy del Excel del reto ya cargadas
+  (`app/seed_data.py`), así el dashboard nunca arranca vacío.
+- Frontend: pestañas "Capturar visita", "Clientes" y "Analytics" en
+  `services/frontend/src/installedBase/`.
+
+Qué queda como stretch goal del propio brief, no construido en esta pasada:
+captura por voz, captura asistida por foto de etiquetas, confidence scoring
+combinando completitud + antigüedad + confirmaciones independientes,
+alertas de información no verificada recientemente, consultas en lenguaje
+natural libres sobre el dataset, e identificación automática de
+oportunidades de renovación.
+
+Nota técnica: la extracción usa prompting + parseo defensivo de JSON, no
+decodificación forzada por schema. `completion()` del SDK acepta un
+parámetro `response_format` que podría forzar JSON válido — su forma exacta
+no se verificó a tiempo contra la versión instalada, así que queda como
+mejora documentada en `services/installed-base/app/extraction.py`.
+
 ## Componentes
 
 ```
-Frontend (chat) --POST /ask--> Router --POST /search--> RAG
+Frontend --POST /ask--> Router --POST /search--> RAG
+   |                       |
+   |                       +--POST /infer--> Peer (medium | gpu)
+   |                                             |
+   |                                         QVAC local (completion real)
+   |
+   +--POST /capture/turn--> Installed Base --GET /peers--> Router
+                                  |                            |
+                                  +--------POST /infer----------+ (mismo Peer)
                                   |
-                                  +--POST /infer--> Peer (medium | gpu)
-                                                        |
-                                                    QVAC local (completion real)
+                              SQLite (observaciones)
 ```
 
 | Componente | Carpeta | Qué hace hoy |
@@ -63,8 +117,9 @@ Frontend (chat) --POST /ask--> Router --POST /search--> RAG
 | **RAG** | `services/rag` | Ingesta 4 documentos demo y los indexa con QVAC real (`rag()`/`RagRequest` de `tetherto-qvac-sdk`). `POST /search` devuelve contexto + fuentes + sensibilidad. Si el modelo de embeddings no está disponible, cae a búsqueda por keywords sobre los mismos docs — nunca se cae la demo. |
 | **Router** | `services/router` | Registro de peers por auto-anuncio/heartbeat (sin IPs hardcodeadas), una política de decisión simple (`app/policy.py`), y `POST /ask` que ejecuta el flujo completo: RAG → elegir peer → inferencia → `UsageEvent`. |
 | **Peer** | `services/peer` | Una sola imagen usada dos veces (`peer-medium`, `peer-gpu`), diferenciada solo por variables de entorno. Corre un modelo QVAC real (`completion()`) y expone `/capabilities`, `/health`, `/infer`. Si el modelo no cargó, responde un stub explícito en vez de fallar. |
-| **Frontend** | `services/frontend` | Chat + panel de estado de peers en React/Vite, tipado contra el contrato compartido (`shared-ts/types.ts`). Habla solo con el Router, nunca directo con RAG o los Peers. |
-| **Shared** | `shared/py/qvac_mesh_shared` | Contratos Pydantic (`ExecutionPlan`, `PeerCapability`, `UsageEvent`, `RagResult`, etc.) que usan RAG, Router y Peer. Paquete pip instalable (`pip install -e shared/py`). Su espejo en TypeScript vive en `shared-ts/types.ts`. |
+| **Installed Base** | `services/installed-base` | El reto de Philips (ver arriba): captura conversacional, extracción con IA vía un Peer, detección de duplicados, SQLite, Customer 360 y analytics. |
+| **Frontend** | `services/frontend` | React/Vite con pestañas: Capturar visita / Clientes / Analytics (Installed Base) + Mesh Demo (el chat genérico original). Tipado contra `shared-ts/types.ts`. |
+| **Shared** | `shared/py/qvac_mesh_shared` | Contratos Pydantic (`ExecutionPlan`, `PeerCapability`, `UsageEvent`, `RagResult`, `EquipmentObservation`, etc.) que usan todos los servicios. Paquete pip instalable (`pip install -e shared/py`). Espejo en TypeScript en `shared-ts/types.ts`. |
 
 ## Arquitectura a la que apuntamos
 
@@ -192,6 +247,7 @@ docker compose up --build
 - RAG: http://localhost:8002
 - Peer medium: http://localhost:8003
 - Peer GPU: http://localhost:8004
+- Installed Base: http://localhost:8005 (docs en `/docs`)
 
 La primera vez, `peer-medium` y `peer-gpu` descargan un modelo pequeño real
 (`LLAMA_3_2_1B_INST_Q4_0`, ~770MB) y RAG descarga un modelo de embeddings
@@ -230,7 +286,8 @@ todas o un subconjunto:
 pip install -e shared/py -r requirements-test.txt \
     -r services/rag/requirements.txt \
     -r services/router/requirements.txt \
-    -r services/peer/requirements.txt
+    -r services/peer/requirements.txt \
+    -r services/installed-base/requirements.txt
 cd services/frontend && npm install && cd ../..
 
 # correr todo
@@ -244,7 +301,7 @@ python scripts/run_tests.py --modules frontend
 python scripts/run_tests.py --list
 ```
 
-Módulos: `shared`, `rag`, `router`, `peer`, `frontend`. Los tests de RAG/Peer
+Módulos: `shared`, `rag`, `router`, `peer`, `installed-base`, `frontend`. Los tests de RAG/Peer
 corren contra el modo fallback (sin worker/modelo QVAC real) a propósito,
 para que la suite no dependa de descargar modelos ni de tener Docker/red
 disponible; el `/ask` de punta a punta contra RAG y Peer reales se mockea en
