@@ -16,6 +16,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.hackathon.technicianapp",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -30,10 +31,17 @@
       [
         "expo-build-properties",
         {
-          "android": { "minSdkVersion": 29 }
+          "android": {
+            "minSdkVersion": 29
+          }
         }
       ],
       "@qvac/sdk/expo-plugin"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0e0b1159-5426-48cf-bfe9-ae77cef93c3d"
+      }
+    }
   }
 }
