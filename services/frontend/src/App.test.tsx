@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import App from "./App";
 
 beforeEach(() => {
@@ -13,17 +14,15 @@ beforeEach(() => {
 });
 
 describe("App", () => {
-  it("renders the title and an empty peers message when no peers are registered", async () => {
+  it("renders the title and defaults to the capture tab", () => {
     render(<App />);
-    expect(screen.getByText("Enterprise AI Mesh")).toBeInTheDocument();
-    expect(await screen.findByText(/Sin peers registrados todavia/)).toBeInTheDocument();
+    expect(screen.getByText("Customer Installed Base Intelligence")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Estoy en Hospital DemoCare Pacific/)).toBeInTheDocument();
   });
 
-  it("renders the chat input and button", async () => {
+  it("switches to the Mesh Demo tab and shows the empty peers state", async () => {
     render(<App />);
-    expect(screen.getByPlaceholderText(/Pregunta algo/)).toBeInTheDocument();
-    expect(screen.getByText("Preguntar")).toBeInTheDocument();
-    // Let the peers-fetch effect settle so it doesn't warn after the test ends.
-    await screen.findByText(/Sin peers registrados todavia/);
+    await userEvent.click(screen.getByText("Mesh Demo"));
+    expect(await screen.findByText(/Sin peers registrados todavia/)).toBeInTheDocument();
   });
 });
