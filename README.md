@@ -1,374 +1,194 @@
-# Enterprise AI Mesh
+# Enterprise AI Mesh — Customer Installed Base Intelligence
 
-## Qué es esta app
+Prototipo de hackathon: un colaborador de campo describe (por texto, voz o
+foto) el equipo médico que ve en un hospital, y el sistema lo convierte en
+datos estructurados y confiables — con **toda la inferencia de IA corriendo
+en el dispositivo o delegada entre nodos QVAC, nunca en una API cloud de
+terceros**. Construido sobre [QVAC](https://github.com/tetherto/qvac), el
+SDK local-first de Tether.
 
-**Enterprise AI Mesh** es un MVP de hackathon construido sobre
-[QVAC](https://github.com/tetherto/qvac), el SDK local-first de Tether para
-correr IA en el dispositivo (sin cloud, sin API keys).
+## Qué es esto, en una frase
 
-La tesis del proyecto: *"Local intelligence. Distributed compute. Autonomous
-settlement."* En una empresa no solo importa qué modelo responde una
-pregunta, sino **dónde** se ejecuta, **qué información** usa, **cuántos
-recursos** consume y **cuánto cuesta** esa capacidad. La propuesta combina
-cuatro piezas:
+Un mesh de microservicios (Router + Peers QVAC + RAG) que garantiza
+"inferencia local/P2P, nunca cloud" por diseño, y una aplicación real
+montada encima (`services/installed-base`, el reto de Philips) que la usa
+para: capturar observaciones de equipo (texto/voz/foto), preguntarle al
+usuario lo que falte, detectar duplicados, y dar una vista por cliente +
+analytics entre clientes.
 
-1. **RAG local**: el conocimiento empresarial (documentación, procedimientos,
-   troubleshooting) vive en un vector store local, nunca en un servicio
-   cloud de terceros.
-2. **AI Router**: decide qué modelo (Small/Medium/Large) y en qué nodo
-   ejecutar cada solicitud, según complejidad, sensibilidad de la
-   información y capacidad disponible.
-3. **P2P delegated inference**: si el nodo de entrada no tiene capacidad
-   suficiente, la inferencia se delega a otro nodo QVAC autorizado de la
-   red — nunca a un proveedor cloud externo.
-4. **Usage metering**: cada inferencia registra nodo, modelo, duración,
-   tokens y costo, representable a futuro como settlement programático en
-   USDt/WDK.
+## Cómo funciona
 
-Problema que resuelve: dependencia de APIs cloud para tareas que no la
-necesitan, riesgo de exponer información sensible a terceros, uso de modelos
-grandes para preguntas triviales, infraestructura propia subutilizada, y
-poca visibilidad de cuánto cuesta realmente la IA en la organización.
+### La regla de oro: el Router decide, los Peers ejecutan
 
-## Estado de este repo
-
-Esto **no es el proyecto completo** de la hackathon — es el entorno
-genérico: todo lo que no depende de qué tarea específica le toque a cada
-persona cuando se repartan los 5 workstreams (RAG, Router, Medium Peer,
-GPU/Large Peer, Frontend+Economy). Concretamente, ya funciona un flujo real
-de punta a punta (no mockeado):
+Ningún servicio le habla nunca directo a un modelo de IA. Todos pasan por
+el **Router**, que mantiene un registro de **Peers** (procesos que sí
+tienen un modelo QVAC cargado) y elige cuál atiende cada pedido según la
+**capacidad** que necesita:
 
 ```
-pregunta -> RAG local -> Router decide -> inferencia local (Peer) -> respuesta + fuentes + costo
+                         POST /infer {capability: "completion"|"multimodal"|"transcription", ...}
+Installed Base  ------------------------------------------------------------------------------->  Router
+                                                                                                       |
+                                                                              elige un Peer con esa capacidad
+                                                                                                       |
+                                        +----------------------+----------------------+----------------------+
+                                        |                      |                      |
+                                  Peer (completion)      Peer (multimodal)      Peer (transcription)
+                                  peer-medium / peer-gpu   peer-vision            peer-voice
+                                  LLAMA_3_2_1B             VisionPsy Nano 460M    Whisper Tiny
+                                        |                      |                      |
+                                    QVAC local              QVAC local             QVAC local
 ```
 
-Las reglas finas (clasificación de complejidad real, políticas de privacidad
-sofisticadas, pricing/settlement real) quedan como placeholders simples a
-propósito — son *mission-dependent* y se afinan cuando se asignen las
-tareas. Ver "Limitaciones" más abajo y `CHANGELOG.md` para el historial de
-cada componente.
+Esto significa que agregar una nueva capacidad de IA (otro idioma, otro
+tipo de modelo) nunca requiere tocar quien la consume — solo se levanta un
+Peer nuevo con la capacidad correspondiente y el Router lo empieza a usar.
+Un Peer es **la misma imagen Docker** (`services/peer`) siempre; lo único
+que cambia entre `peer-medium`, `peer-gpu`, `peer-vision` y `peer-voice`
+son sus variables de entorno (`MODEL_KIND`, `MODEL_NAME`).
 
-## Primer reto: Customer Installed Base Intelligence (Philips)
+### El flujo completo de una captura (texto)
 
-Ya llegó la primera misión concreta de la hackathon. Philips pide un
-prototipo que convierta lo que un colaborador de campo observa en un
-hospital ("dos resonadores y un tomógrafo, uno de los MR parece de unos
-ocho años") en datos estructurados y confiables sobre la base instalada de
-equipos — con captura tan simple como una conversación, y con **requisito
-obligatorio y descalificante**: la inferencia debe correr en el dispositivo
-o delegada P2P vía QVAC, nunca en una API cloud.
+1. El técnico se autentica: `POST /auth/technician {pin}` → le devuelve un
+   token.
+2. Manda una observación: `POST /capture/turn {text: "..."}` con ese token.
+3. `installed-base` arma un prompt de extracción y se lo pasa al Router
+   (`capability: "completion"`), que elige `peer-medium` (o el que esté
+   libre) y corre la inferencia real con QVAC.
+4. El modelo devuelve un JSON con lo que pudo extraer (cliente, ciudad,
+   equipo, cantidad, marca...) y qué falta.
+5. Si falta algo importante, `installed-base` le repregunta al técnico
+   (`agent_message` en la respuesta) y espera el siguiente turno
+   (mandando el mismo `session_id`).
+6. Cuando está completa, se guarda en SQLite: se calcula un **confidence**
+   combinando completitud de datos + si ya había observaciones previas del
+   mismo cliente/equipo (posible duplicado), y queda con un `status`
+   (`reported`/`estimated`/`confirmed`/`unknown`).
 
-Esto es exactamente lo que el Enterprise AI Mesh ya garantiza por
-construcción: cualquier consumidor que solo le hable al Router/Peer hereda
-"inferencia local/P2P, nunca cloud" gratis. `services/installed-base` es
-ese primer consumidor real — un servicio de dominio nuevo que usa un Peer
-para la extracción con IA, sin tocar RAG/Router/Peer (que siguen siendo
-genéricos, como se diseñaron).
+Por **voz** es igual, salvo que primero se transcribe el audio con un Peer
+de transcripción (`POST /capture/turn/voice`, capability="transcription")
+y el texto resultante entra al mismo flujo del paso 3.
 
-Qué hace hoy (cubre el "Minimum Viable Prototype" del brief **y** los 5
-stretch goals que habíamos dejado pendientes):
+Por **foto** es asíncrono, para que el técnico no tenga que esperar:
+`POST /photos` guarda la foto y devuelve al toque (`status: "pending"`);
+un proceso en segundo plano la manda al Peer de visión
+(`peer-vision`, capability="multimodal") para adivinar qué equipo es; el
+técnico revisa después (`GET /photos?status=needs_review`) y confirma o
+corrige (`POST /photos/{id}/validate`) — la foto queda guardada con su
+etiqueta final para siempre, como dataset para un futuro reentrenamiento.
 
-- `POST /capture/turn` (texto) y `POST /capture/turn/voice` (audio): reciben
-  una observación, la mandan al Router para extraer cliente/ciudad/país/
-  equipo (modalidad, cantidad, marca, modelo, antigüedad), preguntan lo que
-  falte en un follow-up, y guardan cuando está completa. Ambas requieren un
-  técnico autenticado (ver Auth abajo).
-- `POST /photos` + cola de revisión: el técnico sube una foto y sigue
-  trabajando de inmediato (no espera); un loop en background la manda al
-  peer de visión, y el técnico valida sí/no después en `GET /photos` +
-  `POST /photos/{id}/validate` — foto y etiqueta final quedan guardadas
-  para siempre (dataset de reentrenamiento futuro).
-- Detecta posibles duplicados (mismo cliente normalizado + misma modalidad)
-  al guardar, y calcula un **confidence combinado** (completitud de campos +
-  cantidad de confirmaciones independientes), no solo el valor crudo que
-  devuelve el modelo.
-- `GET /analytics` incluye alertas de **frescura** (clientes sin
-  observaciones nuevas hace más de 90 días) y **oportunidades de
-  renovación** (clientes con equipo viejo, con la razón explicada).
-- `POST /query`: preguntas en lenguaje natural ("clientes en Panamá con MR")
-  se traducen a un filtro estructurado (vía el mismo Router) y se aplican
-  en Python contra el dataset — nunca se le pide a un LLM que genere SQL.
-- Persiste en SQLite con estado (`confirmed | reported | estimated |
-  unknown`) y confianza (`high | medium | low`) por observación.
-- `GET /customers` / `GET /customers/{id}`: vista Customer 360.
-- Arranca con las 20 observaciones dummy del Excel del reto ya cargadas
-  (`app/seed_data.py`), así el dashboard nunca arranca vacío.
-- Frontend web (`services/frontend/src/installedBase/`): pestañas
-  "Capturar visita" (con login por PIN), "Clientes" y "Analytics" — sirve
-  como demo/referencia mientras se construye la app nativa real.
-
-Nota técnica: la extracción/identificación sigue siendo prompting + parseo
-defensivo de JSON, no decodificación forzada por schema (`response_format`
-de `completion()` queda como mejora futura, no verificada a tiempo).
-
-## Arquitectura multi-nodo: técnicos como nodos, app nativa aparte
-
-La visión real del producto: cada técnico tiene una app nativa (React
-Native/Flutter — **se construye en otro workstream, no en este repo**) que
-funciona como un nodo de la mesh. Este repo deja listo el backend y el
-contrato REST para que esa app se integre:
-
-- **El Router decide el modelo, siempre.** Ningún servicio de dominio
-  (`installed-base`) descubre o llama a un Peer directamente — todo pasa
-  por `POST {ROUTER_URL}/infer {capability: "completion"|"multimodal"|
-  "transcription", ...}`. El Router elige un peer que tenga esa capacidad
-  (`PeerCapability.capabilities`) y lo llama. Esto es cierto para texto,
-  fotos y audio por igual.
-- **Auth de técnico por PIN**: `POST /auth/technician {pin}` devuelve un
-  token; las rutas que crean observaciones (`/capture/turn`,
-  `/capture/turn/voice`, `/photos`, `/photos/{id}/validate`) lo exigen vía
-  `Authorization: Bearer <token>`, y el campo `observer` de cada
-  observación sale del token, nunca de algo que el cliente pueda falsear.
-  **Es intencionalmente el mínimo viable**: PIN con sha256+pepper (no
-  bcrypt/argon2), sin rate-limiting ni bloqueo por intentos fallidos,
-  tokens en memoria (se pierden si el servicio reinicia). No usar así en
-  producción real sin endurecerlo.
-- **Offline-first / store-and-forward**: la app nativa guarda en su propio
-  SQLite local cuando no hay red, y reintenta contra estos mismos
-  endpoints al recuperar conexión. Para que un reintento no duplique una
-  observación, `CaptureTurnRequest` (y el body de `/photos/{id}/validate`)
-  aceptan un `client_event_id` generado por el cliente — el servidor cachea
-  la respuesta y la devuelve tal cual si ve el mismo id de nuevo. No se
-  construyó un endpoint de batch-sync genérico todavía (nadie definió su
-  forma exacta, y la app ni existe) — el patrón recomendado es reintentar
-  estos mismos endpoints uno por uno con su `client_event_id`.
-- **¿Se puede correr todo esto en un VPS cloud?** Sí. El único requisito
-  del reto es que la inferencia corra on-device o delegada P2P *entre nodos
-  QVAC* — nunca a una API de IA de terceros en la nube. Un VPS que vos
-  controlás, corriendo QVAC como uno de los peers de la mesh, es
-  exactamente eso: un nodo QVAC autorizado más, no una API cloud externa.
-  La app del técnico puede vivir liviana (captura + cola offline) mientras
-  el cómputo pesado (visión, voz, extracción) corre en un VPS con más
-  RAM/GPU — sigue siendo 100% QVAC de punta a punta.
-
-## Componentes
+### Quién es cada carpeta
 
 ```
 Frontend --POST /ask-------------> Router --POST /search--> RAG
    |                                  |
    +--POST /capture/turn(/voice)-->   |
-   +--POST /photos, /query-------->  Installed Base
-                                        |
-                                        +--POST /infer {capability}--> Router
-                                                                          |
-                                                        +-----------------+-----------------+
-                                                        |                 |                 |
-                                                  Peer (completion)  Peer (multimodal)  Peer (transcription)
-                                                  peer-medium/gpu     peer-vision         peer-voice
-                                                        |                 |                 |
-                                                    QVAC local        QVAC local         QVAC local
+   +--POST /photos, /query-------->  Installed Base -- POST /infer {capability} --> Router (ver diagrama arriba)
 ```
 
-| Componente | Carpeta | Qué hace hoy |
+| Componente | Carpeta | Rol |
 |---|---|---|
-| **RAG** | `services/rag` | Ingesta 4 documentos demo y los indexa con QVAC real (`rag()`/`RagRequest` de `tetherto-qvac-sdk`). `POST /search` devuelve contexto + fuentes + sensibilidad. Si el modelo de embeddings no está disponible, cae a búsqueda por keywords sobre los mismos docs — nunca se cae la demo. |
-| **Router** | `services/router` | Registro de peers por auto-anuncio/heartbeat (sin IPs hardcodeadas). `POST /ask` (RAG + completion, flujo original) y `POST /infer` (nuevo: cualquier capacidad — completion/multimodal/transcription — para cualquier servicio de dominio). Es el único lugar que decide qué peer atiende cada pedido. |
-| **Peer** | `services/peer` | Una imagen genérica, instanciada 4 veces (`peer-medium`, `peer-gpu`: completion; `peer-vision`: multimodal/VisionPsy Nano; `peer-voice`: transcription/Whisper), diferenciadas solo por variables de entorno (`MODEL_KIND`, `MODEL_NAME`, ...). Expone `/capabilities`, `/health`, `/infer`, `/transcribe`. Si el modelo no cargó, responde un stub explícito en vez de fallar. |
-| **Installed Base** | `services/installed-base` | El reto de Philips (ver arriba): captura por texto/voz/foto, auth de técnico por PIN, detección de duplicados, confidence combinado, freshness/oportunidades, consultas en lenguaje natural, SQLite, Customer 360 y analytics. |
-| **Frontend** | `services/frontend` | React/Vite con pestañas: Capturar visita (con login por PIN) / Clientes / Analytics (Installed Base) + Mesh Demo (el chat genérico original). Tipado contra `shared-ts/types.ts`. |
-| **Shared** | `shared/py/qvac_mesh_shared` | Contratos Pydantic (`ExecutionPlan`, `PeerCapability`, `UsageEvent`, `RagResult`, `EquipmentObservation`, `RouterInferRequest/Result`, `TranscribeRequest/Result`, etc.) que usan todos los servicios. Paquete pip instalable (`pip install -e shared/py`). Espejo en TypeScript en `shared-ts/types.ts`. |
+| **Installed Base** | `services/installed-base` | La app real (reto Philips): captura texto/voz/foto, auth por PIN, duplicados, confidence, analytics, `/query` en lenguaje natural. Es el único servicio con lógica de negocio. |
+| **Router** | `services/router` | El cerebro: registro de Peers (auto-anuncio, sin IPs hardcodeadas) y `POST /infer` — decide qué Peer atiende cada capacidad. También `POST /ask` (RAG + completion, la demo genérica original del mesh). |
+| **Peer** | `services/peer` | Una imagen genérica que corre un modelo QVAC real y expone `/infer`/`/transcribe`. Se instancia 4 veces con distinta config: `peer-medium`, `peer-gpu` (texto), `peer-vision` (fotos), `peer-voice` (audio). |
+| **RAG** | `services/rag` | Conocimiento empresarial local (docs de ejemplo indexados con QVAC). Usado por la demo genérica del mesh (`POST /ask`), no por Installed Base. |
+| **Frontend** | `services/frontend` | React/Vite: pestañas "Capturar visita" (login por PIN), "Clientes", "Analytics", más "Mesh Demo" (el chat genérico). Sirve de referencia mientras se construye la app nativa real de los técnicos. |
+| **Shared** | `shared/py/qvac_mesh_shared` | Los contratos (Pydantic) que hablan todos los servicios entre sí — un solo lugar de verdad para los tipos de dato. Espejo en TypeScript en `shared-ts/types.ts`. |
 
-## Arquitectura a la que apuntamos
+## Cómo lo montás
 
-Lo que hoy corre es un **walking skeleton**: prueba que el concepto
-"pregunta → conocimiento local → decisión → inferencia local/P2P →
-resultado medido" funciona de verdad, con una sola instancia real de cada
-pieza. La arquitectura completa del proyecto (que se termina de construir
-cuando se asignen los 5 workstreams) es:
+### Requisitos
 
-```
-USUARIO -> ASSISTANT -> AI ROUTER (local)
-                            |
-                            +-> RAG LOCAL (conocimiento empresarial)
-                            |
-                            +-> clasifica privacidad + complejidad
-                            |
-                            +-> Small/Medium/Large
-                                   |
-                    capacidad suficiente? --NO--> P2P a otro nodo QVAC autorizado
-                                   |
-                                  SI
-                                   |
-                              inferencia local
-                                   |
-                              USAGE METER -> dashboard -> settlement USDt/WDK
-```
+- Docker + Docker Compose (recomendado), **o** Python 3.11+ y Node 22+ si
+  preferís correr los servicios sueltos.
+- Nada de API keys ni cuentas externas — todo corre local.
 
-Diferencias clave entre el walking skeleton actual y esa meta:
-
-- **Hoy**: 1 Peer "medium" y 1 Peer "gpu" son contenedores en la misma
-  máquina (la topología recomendada por el documento original del proyecto
-  para desarrollo/demo). **Meta**: peers en máquinas físicas distintas,
-  demostrando descentralización real, no solo lógica.
-- **Hoy**: el Router usa una heurística de palabras clave/longitud para
-  clasificar complejidad, y siempre trata `RESTRICTED` como local-only.
-  **Meta**: un clasificador real de complejidad + una matriz de políticas de
-  privacidad completa (public/internal/confidential/restricted ×
-  local/trusted-peer/peer-permitido).
-- **Hoy**: `UsageEvent.settlement_status` es siempre `not_implemented`.
-  **Meta**: settlement programático real vía USDt/WDK cuando un nodo
-  consume capacidad de otro.
-- **Hoy**: RAG indexa 4 documentos hardcodeados. **Meta**: pipeline de
-  ingesta real sobre documentación de infraestructura, aplicaciones,
-  tickets y procedimientos de la empresa.
-
-## Limitaciones actuales y cómo abordarlas luego
-
-**1. QVAC no tiene una primitiva de "delegated inference" lista para usar.**
-Su P2P real (Hyperswarm/Hyperdrive + blind relays) sirve para *descargar
-modelos* entre peers, no para enrutar cómputo de inferencia. La "red P2P" de
-este proyecto es una capa de aplicación construida encima de QVAC (Router
-llamando por HTTP normal al `/infer` de un Peer), no algo que QVAC resuelva
-solo.
-→ *Cómo abordarla*: es una decisión de diseño ya tomada y funcionando, no un
-bug — documentarla así evita que alguien pierda tiempo buscando una API de
-QVAC que no existe. Si más adelante se quiere aprovechar el P2P nativo de
-QVAC, sería para *distribuir los modelos* (que cada peer no tenga que
-descargar el mismo GGUF por su cuenta), no para el ruteo de inferencia en sí.
-
-**2. Un solo Peer real, el segundo es la misma imagen duplicada.**
-`peer-gpu` corre hoy el mismo modelo chico que `peer-medium` (para no forzar
-una descarga grande en el baseline). No hay lógica real de selección entre
-múltiples peers del mismo tier.
-→ *Cómo abordarla*: cuando se asigne el workstream de GPU/Large, cambiar
-`MODEL_NAME` en `docker-compose.yml` a un modelo grande real y agregar la
-config de GPU (device mapping) al Dockerfile/compose de ese peer. El código
-de `services/peer` no necesita cambiar — es genérico por diseño.
-
-**3. Clasificación de complejidad/privacidad es un heurístico simple.**
-`classify_complexity` en `services/router/app/policy.py` mira longitud y
-palabras clave, no el contenido real de la solicitud.
-→ *Cómo abordarla*: reemplazar esa función por un clasificador real (puede
-ser otro modelo QVAC chico corriendo en el propio Router, o reglas más
-finas) cuando se conozcan los casos de uso reales de la hackathon. El
-contrato (`ExecutionPlan`) no cambia, así que Frontend/Peers no se enteran.
-
-**4. Sin P2P real entre máquinas físicas.**
-Los 2 peers son contenedores en un solo host.
-→ *Cómo abordarla*: mover un peer a otra laptop es, por diseño, solo cambiar
-`ROUTER_URL`/`PEER_*_URL` en su `.env` (ningún IP está hardcodeado en
-código) y correr `services/peer` ahí directamente o con Docker. No requiere
-tocar código.
-
-**5. Sin settlement económico real.**
-`UsageEvent.settlement_status` queda en `"not_implemented"`.
-→ *Cómo abordarla*: es intencional — el documento del proyecto ya aclara que
-el settlement es una capa secundaria de contabilidad, no debe convertirse en
-el centro del MVP. Cuando se aborde, conectar ese campo a WDK/USDt es un
-cambio acotado al Workstream 5 (Frontend/Economy) + un evento que el Router
-ya emite.
-
-**6. RAG con documentos demo, no la base de conocimiento real.**
-→ *Cómo abordarla*: reemplazar `DEMO_DOCUMENTS` en
-`services/rag/app/demo_docs.py` por un pipeline de ingesta real (chunking,
-más de un workspace, filtros de sensibilidad por documento) es trabajo
-acotado al Workstream 1 — la interfaz `POST /search` no cambia.
-
-**7. Verificación de `docker compose up --build` pendiente.**
-Se validó cada servicio por separado (tests unitarios, `docker compose
-config`) pero no se corrió el build completo con el daemon de Docker en
-esta sesión (Docker Desktop tuvo problemas en la máquina de desarrollo).
-→ *Cómo abordarla*: correr `docker compose up --build` la primera vez que
-alguien tenga Docker Desktop sano; si algo falla en el build (típicamente la
-instalación del worker de QVAC), ver el caveat de Windows/npm más abajo.
-
-**8. Caveat de Windows: `install-worker` no detecta `npm`.**
-En esta máquina, `tetherto-qvac-sdk`'s `install-worker` no encontró `npm`
-corriendo desde Git Bash/PowerShell (aunque `npm`/`node` sí están en PATH) —
-un problema de resolución de comandos del propio instalador del SDK en
-Windows nativo, no de este repo. Dentro del contenedor Docker (Debian +
-Node.js vía NodeSource) no debería reproducirse.
-→ *Cómo abordarla si aparece*: instalar `@qvac/sdk` globalmente
-(`npm install -g @qvac/sdk@<version>`) y apuntar `QVAC_SDK_DIR`/
-`QVAC_WORKER_PATH` a esa instalación (workaround documentado por el propio
-SDK).
-
-**9. Auth de técnico es el mínimo viable, no producción.**
-PIN + sha256/pepper, tokens en memoria, sin rate-limiting ni rotación.
-→ *Cómo abordarla*: antes de un uso real, mover a bcrypt/argon2, persistir
-tokens/sesiones fuera de memoria, agregar rate-limiting y bloqueo por
-intentos fallidos, y un panel de administración de técnicos en vez del
-diccionario fijo en `services/installed-base/app/auth.py`.
-
-**10. VisionPsy Nano y Whisper no se descargaron/probaron con inferencia
-real en esta sandbox** (mismo motivo que los peers de texto: RAM limitada
-en la máquina de desarrollo). El código de `peer-vision`/`peer-voice` está
-completo y verificado contra el SDK real (signatures, shapes de request)
-pero no contra un modelo cargado de verdad.
-→ *Cómo abordarla*: correr `docker compose up peer-vision peer-voice` con
-Docker sano y probar `/photos` y `/capture/turn/voice` con fotos/audio
-reales de equipos.
-
-**11. Sin fine-tuning real del modelo de visión.**
-Las fotos + etiqueta confirmada (o corregida por el técnico) quedan
-guardadas en `photo_queue` — es el dataset, no el entrenamiento.
-→ *Cómo abordarla*: cuando haya suficientes fotos etiquetadas, exportar
-`photo_queue` y correr un fine-tune real de VisionPsy Nano (o el VLM que se
-elija) vía QVAC.
-
-**12. No hay endpoint de batch-sync genérico para offline.**
-La app nativa (cuando exista) reintenta los endpoints uno por uno con
-`client_event_id` para evitar duplicados — no hay un `/sync/batch` que
-reciba un lote de eventos en una sola llamada.
-→ *Cómo abordarla*: definirlo junto con quien construya la app nativa,
-una vez se sepa su forma real de encolar eventos localmente.
-
-**13. Confidence no se recalcula retroactivamente.**
-Si llega una tercera observación independiente confirmando un equipo, las
-dos anteriores no suben de confidence — solo la nueva se beneficia de
-haber encontrado duplicados previos.
-→ *Cómo abordarla*: en `store.insert()`, además de calcular el confidence
-de la fila nueva, hacer un `UPDATE` a los ids en `possible_duplicate_of`
-recalculando el suyo con el conteo actualizado.
-
-## Cómo levantar el entorno
+### Opción A — Docker (recomendada)
 
 ```bash
 docker compose up --build
 ```
 
-- Frontend: http://localhost:5173
-- Router: http://localhost:8001 (docs en `/docs`)
-- RAG: http://localhost:8002
-- Peer medium: http://localhost:8003
-- Peer GPU: http://localhost:8004
-- Installed Base: http://localhost:8005 (docs en `/docs`)
-- Peer vision (fotos): http://localhost:8006
-- Peer voice (audio): http://localhost:8007
+Levanta 8 contenedores en una red interna:
 
-La primera vez, cada Peer descarga su modelo real vía QVAC:
-`peer-medium`/`peer-gpu` -> `LLAMA_3_2_1B_INST_Q4_0` (~770MB), RAG ->
-`EMBEDDINGGEMMA_300M_Q4_0` (~280MB), `peer-vision` ->
-`VISIONPSY_NANO_460M_MULTIMODAL_Q8_0` + su mmproj (chico, ~460M params),
-`peer-voice` -> `WHISPER_TINY` (~78MB, el más liviano de todos). Mientras
-se descarga, cada servicio sigue funcionando en modo fallback (ver
-"Limitaciones") — así nunca se cae la demo por falta de red/tiempo.
+| Servicio | URL |
+|---|---|
+| Frontend | http://localhost:5173 |
+| Router | http://localhost:8001 (`/docs` para el Swagger) |
+| RAG | http://localhost:8002 |
+| Peer medium | http://localhost:8003 |
+| Peer GPU | http://localhost:8004 |
+| **Installed Base** | http://localhost:8005 (`/docs` para el Swagger) |
+| Peer vision (fotos) | http://localhost:8006 |
+| Peer voice (audio) | http://localhost:8007 |
 
-Sin Docker, cada servicio corre igual con un venv (`pip install -e shared/py
--r services/<x>/requirements.txt && uvicorn app.main:app`) más `npm install
-&& npm run dev` en `services/frontend`.
+La primera vez, cada Peer descarga su modelo real vía QVAC (nada gigante):
+`LLAMA_3_2_1B_INST_Q4_0` (~770MB, texto), `EMBEDDINGGEMMA_300M_Q4_0`
+(~280MB, RAG), `VISIONPSY_NANO_460M_MULTIMODAL_Q8_0` + su mmproj (fotos),
+`WHISPER_TINY` (~78MB, audio — el más liviano). Mientras se descarga, cada
+servicio sigue respondiendo en modo fallback (ver "Limitaciones") — la demo
+nunca se cae por falta de red o tiempo.
 
-## Variables de entorno
+### Opción B — sin Docker
 
-Ver `.env.example`. Regla de oro: ningún servicio tiene una IP/hostname
-hardcodeado — todo peer se descubre vía `ROUTER_URL`/`RAG_URL`/registro de
-capacidades, así que mover un peer a otra laptop es solo cambiar esas URLs.
+```bash
+# por cada servicio en services/<nombre>/
+pip install -e shared/py -r services/<nombre>/requirements.txt
+uvicorn app.main:app --reload --port 8000
 
-## Por dónde empieza cada quien (cuando lleguen las tareas)
+# frontend
+cd services/frontend && npm install && npm run dev
+```
 
-| Workstream | Carpeta | Punto de partida |
-|---|---|---|
-| 1. RAG | `services/rag/app/rag_engine.py` | reemplazar `DEMO_DOCUMENTS` por ingesta real, afinar chunking/sensibilidad |
-| 2. Router | `services/router/app/policy.py` | reemplazar la heurística de `classify_complexity`/`decide_plan` por las reglas reales |
-| 3. Medium Peer | `services/peer` + env vars de `peer-medium` en `docker-compose.yml` | nada de código nuevo si el modelo alcanza; si no, ajustar `qvac_runtime.py` |
-| 4. GPU/Large Peer | `services/peer` + env vars de `peer-gpu` | cambiar `MODEL_NAME` a un modelo grande real + config de GPU en el Dockerfile/compose |
-| 5. Frontend/Economy | `services/frontend/src` | pulir UI, sumar wallet/settlement real (hoy `UsageEvent.settlement_status` es `not_implemented`) |
+Ver `.env.example` para todas las variables — la regla de oro es que
+**ningún servicio tiene una IP/hostname hardcodeado**: todo se descubre vía
+`ROUTER_URL`/`RAG_URL`/registro de capacidades, así que mover un Peer a
+otra máquina es solo cambiar esa URL, nunca tocar código.
+
+### Verificar que arrancó bien
+
+```bash
+curl http://localhost:8005/health
+curl http://localhost:8005/customers   # ya trae 20 clientes demo precargados
+```
+
+## Cómo lo usás (ejemplos reales)
+
+```bash
+# 1. Login del técnico (PINs demo en services/installed-base/app/auth.py)
+TOKEN=$(curl -s -X POST http://localhost:8005/auth/technician \
+  -H "Content-Type: application/json" -d '{"pin": "1234"}' | jq -r .token)
+
+# 2. Capturar una observación por texto
+curl -X POST http://localhost:8005/capture/turn \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"text": "Estoy en Hospital DemoCare Pacific, en Panama. Tienen dos resonadores."}'
+
+# 3. Subir una foto de una placa/etiqueta (queda en cola, no bloquea)
+curl -X POST http://localhost:8005/photos \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "photo=@equipo.jpg" -F "customer=Hospital DemoCare Pacific"
+
+# 4. Ver fotos listas para validar, y confirmar una
+curl http://localhost:8005/photos?status=needs_review
+curl -X POST http://localhost:8005/photos/1/validate \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"confirmed": true}'
+
+# 5. Preguntar en lenguaje natural sobre el dataset (no requiere login)
+curl -X POST http://localhost:8005/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "clientes en Panama con equipos MR"}'
+
+# 6. Vista por cliente y analytics agregado (tampoco requieren login)
+curl http://localhost:8005/customers/"Hospital DemoCare Pacific"
+curl http://localhost:8005/analytics
+```
+
+O simplemente abrí http://localhost:5173 y usá la pestaña "Capturar visita"
+(pide el mismo PIN) — es la misma API, con interfaz.
 
 ## Tests
-
-Cada componente tiene su propia suite (pytest para los servicios Python,
-vitest para el frontend) y un runner en `scripts/run_tests.py` que corre
-todas o un subconjunto:
 
 ```bash
 # setup (una vez por venv)
@@ -379,23 +199,121 @@ pip install -e shared/py -r requirements-test.txt \
     -r services/installed-base/requirements.txt
 cd services/frontend && npm install && cd ../..
 
-# correr todo
-python scripts/run_tests.py
-
-# correr solo algunos modulos
-python scripts/run_tests.py --modules rag router
-python scripts/run_tests.py --modules frontend
-
-# ver los nombres de modulo disponibles
-python scripts/run_tests.py --list
+python scripts/run_tests.py                    # todos los modulos
+python scripts/run_tests.py --modules rag router  # un subconjunto
+python scripts/run_tests.py --list             # ver nombres disponibles
 ```
 
-Módulos: `shared`, `rag`, `router`, `peer`, `installed-base`, `frontend`. Los tests de RAG/Peer
-corren contra el modo fallback (sin worker/modelo QVAC real) a propósito,
-para que la suite no dependa de descargar modelos ni de tener Docker/red
-disponible; el `/ask` de punta a punta contra RAG y Peer reales se mockea en
-`services/router/tests/test_main.py` y se valida de verdad manualmente con
-`docker compose up`.
+Módulos: `shared`, `rag`, `router`, `peer`, `installed-base`, `frontend`.
+Los tests corren contra peers **mockeados** a propósito (mismo patrón en
+todos los servicios) para no depender de descargar modelos ni tener
+Docker/red disponible — la inferencia real se prueba levantando el mesh de
+verdad (`docker compose up`) y probando con los ejemplos de arriba.
+
+## Arquitectura a la que apunta el proyecto completo
+
+Lo que corre hoy es un **walking skeleton**: prueba que "conocimiento local
+→ decisión del Router → inferencia local/P2P → resultado" funciona de
+punta a punta de verdad, no mockeado. La meta completa del Enterprise AI
+Mesh (más allá de Installed Base) agrega:
+
+```
+USUARIO -> ASSISTANT -> AI ROUTER (local)
+                            |
+                            +-> RAG LOCAL (conocimiento empresarial)
+                            +-> clasifica privacidad + complejidad
+                            +-> Small/Medium/Large
+                                   |
+                    capacidad suficiente? --NO--> P2P a otro nodo QVAC autorizado
+                                   |
+                                  SI -> inferencia local
+                                   |
+                              USAGE METER -> dashboard -> settlement USDt/WDK
+```
+
+Y para Installed Base específicamente, la meta es que cada técnico tenga
+una **app nativa** (React Native/Flutter — se construye en otro
+workstream, no en este repo) funcionando como nodo offline-first: guarda
+en su propio SQLite cuando no hay red, y sincroniza contra estos mismos
+endpoints al recuperar conexión. Por eso `CaptureTurnRequest` y
+`/photos/{id}/validate` ya aceptan un `client_event_id`: si la app
+reintenta un envío que ya se procesó, el servidor devuelve la respuesta
+cacheada en vez de duplicar la observación.
+
+**¿Se puede correr esto en un VPS cloud?** Sí — el único requisito es que
+la inferencia corra on-device o delegada P2P *entre nodos QVAC*, nunca a
+una API de IA de terceros. Un VPS propio corriendo QVAC como uno de los
+Peers del mesh es exactamente eso: un nodo QVAC autorizado más, no una API
+cloud externa. La app del técnico puede ser liviana (captura + cola
+offline) mientras el cómputo pesado corre en un VPS con más RAM/GPU.
+
+## Limitaciones actuales y cómo abordarlas luego
+
+**1. QVAC no tiene una primitiva de "delegated inference" lista para usar.**
+Su P2P real (Hyperswarm/Hyperdrive + blind relays) sirve para *descargar
+modelos* entre peers, no para enrutar cómputo de inferencia. La "red P2P"
+de este proyecto es una capa de aplicación construida encima de QVAC
+(Router llamando por HTTP normal a un Peer), no algo que QVAC resuelva
+solo. → Es una decisión de diseño ya tomada y funcionando, no un bug.
+
+**2. `peer-gpu` corre el mismo modelo chico que `peer-medium`** (para no
+forzar una descarga grande en el baseline), sin lógica real de selección
+entre peers del mismo tier. → Cambiar `MODEL_NAME` en `docker-compose.yml`
+a un modelo grande real + GPU cuando haga falta; el código no cambia.
+
+**3. Clasificación de complejidad/privacidad del Router (`POST /ask`) es
+un heurístico simple** (longitud/palabras clave), no un clasificador real.
+→ Reemplazar `classify_complexity` en `services/router/app/policy.py`
+cuando se conozcan los casos de uso reales; el contrato no cambia.
+
+**4. Sin P2P real entre máquinas físicas** — los peers son contenedores en
+un solo host. → Mover uno a otra máquina es, por diseño, solo cambiar
+`ROUTER_URL`/`PEER_*_URL` en su `.env`; no requiere tocar código.
+
+**5. Sin settlement económico real** — `UsageEvent.settlement_status`
+queda en `"not_implemented"` a propósito; es una capa secundaria de
+contabilidad, no el centro del MVP.
+
+**6. RAG indexa 4 documentos demo**, no una base de conocimiento real. →
+Reemplazar `DEMO_DOCUMENTS` en `services/rag/app/demo_docs.py`; la interfaz
+`POST /search` no cambia.
+
+**7. `docker compose up --build` no se corrió de punta a punta en esta
+sesión** (Docker Desktop tuvo problemas en la máquina de desarrollo) — sí
+se validó cada servicio por separado (tests unitarios, `docker compose
+config`). Si el build falla, ver el punto 8.
+
+**8. Caveat de Windows: `install-worker` de `tetherto-qvac-sdk` puede no
+detectar `npm`** corriendo desde Git Bash/PowerShell nativo (problema del
+instalador del SDK, no de este repo — no debería pasar dentro del
+contenedor Docker). → Si aparece: `npm install -g @qvac/sdk@<version>` y
+apuntar `QVAC_SDK_DIR`/`QVAC_WORKER_PATH` a esa instalación.
+
+**9. Auth de técnico es el mínimo viable, no producción.** PIN +
+sha256/pepper, tokens en memoria, sin rate-limiting ni rotación. → Antes de
+un uso real: bcrypt/argon2, tokens persistidos, rate-limiting, y un panel
+de administración en vez del diccionario fijo en `app/auth.py`.
+
+**10. VisionPsy Nano y Whisper no se probaron con inferencia real** en
+esta sandbox (RAM limitada en la máquina de desarrollo) — el código está
+completo y verificado contra el SDK real, pero no contra un modelo
+cargado de verdad. → Correr `docker compose up peer-vision peer-voice` con
+Docker sano y probar con fotos/audio reales.
+
+**11. Sin fine-tuning real del modelo de visión** — las fotos + etiqueta
+confirmada quedan guardadas en `photo_queue` como dataset, no como modelo
+entrenado. → Exportarlas y correr un fine-tune real vía QVAC cuando haya
+volumen suficiente.
+
+**12. No hay endpoint de batch-sync genérico para offline** — el patrón
+hoy es reintentar los endpoints uno por uno con `client_event_id`. →
+Definir un `/sync/batch` junto con quien construya la app nativa, una vez
+se sepa su forma real de encolar eventos localmente.
+
+**13. Confidence no se recalcula retroactivamente** — una tercera
+observación independiente no sube el confidence de las dos anteriores. →
+En `store.insert()`, además de calcular el confidence de la fila nueva,
+actualizar los ids en `possible_duplicate_of` con el conteo nuevo.
 
 ## Changelog
 
