@@ -12,7 +12,9 @@ def clean_registry():
     registry._peers.clear()
 
 
-def _cap(node_id: str, role: NodeRole, tier: ModelTier, price: float = 0.0) -> PeerCapability:
+def _cap(
+    node_id: str, role: NodeRole, tier: ModelTier, price: float = 0.0, capabilities: list[str] | None = None
+) -> PeerCapability:
     return PeerCapability(
         node_id=node_id,
         role=role,
@@ -20,6 +22,7 @@ def _cap(node_id: str, role: NodeRole, tier: ModelTier, price: float = 0.0) -> P
         model_name="LLAMA_3_2_1B_INST_Q4_0",
         base_url=f"http://{node_id}:8000",
         price_per_1k_tokens=price,
+        capabilities=capabilities or ["completion"],
     )
 
 
@@ -58,3 +61,22 @@ def test_decide_plan_forces_local_for_restricted_even_if_complex():
 def test_decide_plan_raises_when_no_peers_registered():
     with pytest.raises(RuntimeError):
         policy.decide_plan("hola", SensitivityClass.INTERNAL)
+
+
+def test_pick_by_capability_finds_matching_peer():
+    registry.upsert(_cap("peer-vision", NodeRole.MEDIUM_PROVIDER, ModelTier.MEDIUM, capabilities=["multimodal"]))
+    registry.upsert(_cap("peer-medium", NodeRole.MEDIUM_PROVIDER, ModelTier.MEDIUM, capabilities=["completion"]))
+    peer = policy.pick_by_capability("multimodal")
+    assert peer.node_id == "peer-vision"
+
+
+def test_pick_by_capability_ignores_tier():
+    registry.upsert(_cap("peer-voice", NodeRole.MEDIUM_PROVIDER, ModelTier.LARGE, capabilities=["transcription"]))
+    peer = policy.pick_by_capability("transcription")
+    assert peer.node_id == "peer-voice"
+
+
+def test_pick_by_capability_raises_when_none_match():
+    registry.upsert(_cap("peer-medium", NodeRole.MEDIUM_PROVIDER, ModelTier.MEDIUM, capabilities=["completion"]))
+    with pytest.raises(RuntimeError):
+        policy.pick_by_capability("multimodal")

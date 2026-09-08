@@ -12,8 +12,11 @@ from qvac_mesh_shared import (
     PeerCapability,
     RagResult,
     RagSearchRequest,
+    RouterInferRequest,
+    RouterInferResult,
     SensitivityClass,
     SettlementStatus,
+    TranscribeRequest,
     UsageEvent,
 )
 from qvac_mesh_shared.config import NodeSettings
@@ -50,6 +53,61 @@ async def register_peer(capability: PeerCapability) -> PeerCapability:
 @app.get("/peers")
 async def list_peers() -> list[PeerCapability]:
     return registry.all()
+
+
+@app.post("/infer", response_model=RouterInferResult)
+async def infer(request: RouterInferRequest) -> RouterInferResult:
+    """The one entry point any domain service (installed-base, future
+    missions) uses for inference of any kind -- the Router picks the peer
+    (by capability), calls it, and returns a unified result. Callers never
+    discover/call a Peer directly."""
+    try:
+        peer = policy.pick_by_capability(request.capability)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    request_id = request.request_id or str(uuid.uuid4())
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        if request.capability == "transcription":
+            if not request.audio_path:
+                raise HTTPException(status_code=400, detail="audio_path is required for capability=transcription")
+            resp = await client.post(
+                f"{peer.base_url}/transcribe",
+                json=TranscribeRequest(request_id=request_id, audio_path=request.audio_path).model_dump(),
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            return RouterInferResult(
+                request_id=result["request_id"],
+                node_id=result["node_id"],
+                model=result["model"],
+                capability=request.capability,
+                text=result["text"],
+                duration_ms=result["duration_ms"],
+            )
+
+        if not request.query:
+            raise HTTPException(status_code=400, detail=f"query is required for capability={request.capability}")
+        resp = await client.post(
+            f"{peer.base_url}/infer",
+            json=InferenceRequest(
+                request_id=request_id,
+                query=request.query,
+                context=request.context,
+                image_path=request.image_path,
+            ).model_dump(),
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        return RouterInferResult(
+            request_id=result["request_id"],
+            node_id=result["node_id"],
+            model=result["model"],
+            capability=request.capability,
+            text=result["answer"],
+            duration_ms=result["duration_ms"],
+        )
 
 
 @app.post("/route", response_model=ExecutionPlan)

@@ -80,3 +80,13 @@ def decide_plan(query: str, sensitivity: SensitivityClass) -> ExecutionPlan:
         reason=reason,
         estimated_cost=estimated_cost,
     )
+
+
+def pick_by_capability(capability: str) -> PeerCapability:
+    """Used by /infer: picks any available peer that has the requested
+    capability (completion | multimodal | transcription), ignoring tier --
+    tiering only matters for the text-completion routing above."""
+    candidates = registry.by_capability(capability)
+    if not candidates:
+        raise RuntimeError(f"No peer with capability '{capability}' is registered/available")
+    return candidates[0]

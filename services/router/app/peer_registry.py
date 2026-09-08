@@ -21,16 +21,22 @@ class PeerRegistry:
     def all(self) -> list[PeerCapability]:
         return list(self._peers.values())
 
-    def available(self, model_tier: ModelTier | None = None) -> list[PeerCapability]:
+    def _fresh(self) -> list[PeerCapability]:
         now = datetime.now(timezone.utc)
-        fresh = [
+        return [
             p
             for p in self._peers.values()
             if p.available and (now - p.last_seen).total_seconds() < STALE_AFTER_SECONDS
         ]
+
+    def available(self, model_tier: ModelTier | None = None) -> list[PeerCapability]:
+        fresh = self._fresh()
         if model_tier is None:
             return fresh
         return [p for p in fresh if p.model_tier == model_tier]
+
+    def by_capability(self, capability: str) -> list[PeerCapability]:
+        return [p for p in self._fresh() if capability in p.capabilities]
 
 
 registry = PeerRegistry()

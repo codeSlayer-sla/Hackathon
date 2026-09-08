@@ -92,6 +92,16 @@ class _FakeAsyncClient:
                     "cost": 0.0,
                 }
             )
+        if url.endswith("/transcribe"):
+            return _FakeResponse(
+                {
+                    "request_id": json["request_id"],
+                    "node_id": "peer-voice",
+                    "model": "WHISPER_TINY",
+                    "text": "hola mundo transcrito",
+                    "duration_ms": 5.0,
+                }
+            )
         raise AssertionError(f"unexpected URL in test: {url}")
 
 
@@ -114,3 +124,68 @@ def test_ask_runs_full_flow_with_mocked_rag_and_peer(monkeypatch):
         assert body["answer"] == "respuesta de prueba"
         assert body["plan"]["target_node_id"] == "peer-medium"
         assert body["usage"]["settlement_status"] == "not_implemented"
+
+
+def test_infer_completion_capability_calls_matching_peer(monkeypatch):
+    registry.upsert(
+        PeerCapability(
+            node_id="peer-medium",
+            role=NodeRole.MEDIUM_PROVIDER,
+            model_tier=ModelTier.MEDIUM,
+            model_name="LLAMA_3_2_1B_INST_Q4_0",
+            base_url="http://peer-medium:8000",
+            capabilities=["completion"],
+        )
+    )
+    monkeypatch.setattr("app.main.httpx.AsyncClient", _FakeAsyncClient)
+
+    with TestClient(app) as client:
+        resp = client.post("/infer", json={"capability": "completion", "query": "hola"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["text"] == "respuesta de prueba"
+        assert body["capability"] == "completion"
+        assert body["node_id"] == "peer-medium"
+
+
+def test_infer_transcription_capability_calls_matching_peer(monkeypatch):
+    registry.upsert(
+        PeerCapability(
+            node_id="peer-voice",
+            role=NodeRole.MEDIUM_PROVIDER,
+            model_tier=ModelTier.MEDIUM,
+            model_name="WHISPER_TINY",
+            base_url="http://peer-voice:8000",
+            capabilities=["transcription"],
+        )
+    )
+    monkeypatch.setattr("app.main.httpx.AsyncClient", _FakeAsyncClient)
+
+    with TestClient(app) as client:
+        resp = client.post("/infer", json={"capability": "transcription", "audio_path": "/data/media/audio/a.wav"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["text"] == "hola mundo transcrito"
+        assert body["node_id"] == "peer-voice"
+
+
+def test_infer_returns_503_when_no_peer_has_capability():
+    with TestClient(app) as client:
+        resp = client.post("/infer", json={"capability": "multimodal", "query": "hola"})
+        assert resp.status_code == 503
+
+
+def test_infer_requires_audio_path_for_transcription():
+    registry.upsert(
+        PeerCapability(
+            node_id="peer-voice",
+            role=NodeRole.MEDIUM_PROVIDER,
+            model_tier=ModelTier.MEDIUM,
+            model_name="WHISPER_TINY",
+            base_url="http://peer-voice:8000",
+            capabilities=["transcription"],
+        )
+    )
+    with TestClient(app) as client:
+        resp = client.post("/infer", json={"capability": "transcription"})
+        assert resp.status_code == 400
