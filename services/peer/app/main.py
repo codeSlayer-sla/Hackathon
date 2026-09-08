@@ -4,8 +4,16 @@ import uuid
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI
-from qvac_mesh_shared import InferenceRequest, InferenceResult, NodeRole, ModelTier, PeerCapability
+from fastapi import FastAPI, HTTPException
+from qvac_mesh_shared import (
+    InferenceRequest,
+    InferenceResult,
+    ModelTier,
+    NodeRole,
+    PeerCapability,
+    TranscribeRequest,
+    TranscribeResult,
+)
 from qvac_mesh_shared.config import NodeSettings
 
 from .qvac_runtime import QvacRuntime
@@ -13,7 +21,11 @@ from .qvac_runtime import QvacRuntime
 logger = logging.getLogger("peer.main")
 
 settings = NodeSettings()
-runtime = QvacRuntime(model_name=settings.model_name)
+runtime = QvacRuntime(
+    model_name=settings.model_name,
+    kind=settings.model_kind,
+    projection_model_name=settings.model_projection_name,
+)
 
 HEARTBEAT_INTERVAL_SECONDS = 20
 
@@ -27,6 +39,7 @@ def _capability() -> PeerCapability:
         base_url=f"http://{settings.node_id}:{settings.port}",
         available=runtime.ready,
         price_per_1k_tokens=settings.price_per_1k_tokens,
+        capabilities=[runtime.kind],
     )
 
 
@@ -67,7 +80,12 @@ async def capabilities() -> PeerCapability:
 
 @app.post("/infer", response_model=InferenceResult)
 async def infer(request: InferenceRequest) -> InferenceResult:
-    answer, tokens_in, tokens_out, duration_ms = await runtime.complete(request.query, request.context)
+    if request.image_path and runtime.kind != "multimodal":
+        raise HTTPException(status_code=400, detail=f"Peer '{settings.node_id}' is not multimodal")
+
+    answer, tokens_in, tokens_out, duration_ms = await runtime.complete(
+        request.query, request.context, request.image_path
+    )
     cost = (tokens_in + tokens_out) / 1000 * settings.price_per_1k_tokens
     return InferenceResult(
         request_id=request.request_id or str(uuid.uuid4()),
@@ -78,4 +96,19 @@ async def infer(request: InferenceRequest) -> InferenceResult:
         tokens_in=tokens_in,
         tokens_out=tokens_out,
         cost=cost,
+    )
+
+
+@app.post("/transcribe", response_model=TranscribeResult)
+async def transcribe(request: TranscribeRequest) -> TranscribeResult:
+    if runtime.kind != "transcription":
+        raise HTTPException(status_code=400, detail=f"Peer '{settings.node_id}' is not a transcription peer")
+
+    text, duration_ms = await runtime.transcribe(request.audio_path)
+    return TranscribeResult(
+        request_id=request.request_id or str(uuid.uuid4()),
+        node_id=settings.node_id,
+        model=settings.model_name,
+        text=text,
+        duration_ms=duration_ms,
     )
