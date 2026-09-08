@@ -26,6 +26,7 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 ## Installed Base (Philips Challenge)
 
+- `2e748e6` 2026-09-07: suite pytest -- parseo JSON defensivo, deteccion de duplicados, analytics, `/capture/turn` con Router/Peer mockeados
 - `821b16f` 2026-09-07: servicio Installed Base -- captura conversacional (`/capture/turn`), extraccion via Peer real, deteccion de duplicados, SQLite con seed de las 20 filas dummy, Customer 360 (`/customers`), analytics (`/analytics`)
 
 ## Shared / Infra
