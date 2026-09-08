@@ -1,6 +1,8 @@
+from datetime import datetime, timedelta, timezone
+
 from qvac_mesh_shared import ConfidenceLevel, EquipmentObservation, ObservationStatus
 
-from app.store import Store
+from app.store import Store, compute_confidence
 
 
 def _obs(**overrides) -> EquipmentObservation:
@@ -85,3 +87,105 @@ def test_analytics_on_empty_store():
     analytics = store.compute_analytics()
     assert analytics.total_observations == 0
     assert analytics.average_age_years is None
+
+
+def test_analytics_flags_stale_customers():
+    store = Store(":memory:")
+    old = _obs(customer="Hospital Stale")
+    old = old.model_copy(update={"created_at": datetime.now(timezone.utc) - timedelta(days=200)})
+    store.insert(old)
+    store.insert(_obs(customer="Hospital Fresh"))
+    analytics = store.compute_analytics()
+    assert "Hospital Stale" in analytics.stale_customers
+    assert "Hospital Fresh" not in analytics.stale_customers
+
+
+def test_analytics_refresh_opportunities_reflect_aging_customers():
+    store = Store(":memory:")
+    store.insert(_obs(customer="Hospital Old", modality="CT", approx_age_years=12))
+    analytics = store.compute_analytics()
+    assert len(analytics.refresh_opportunities) == 1
+    assert analytics.refresh_opportunities[0].customer == "Hospital Old"
+    assert "CT" in analytics.refresh_opportunities[0].reason
+
+
+# -- compute_confidence -------------------------------------------------
+
+
+def test_compute_confidence_low_when_nothing_filled_and_no_duplicates():
+    assert compute_confidence((None, None, None), duplicate_count=0) == ConfidenceLevel.LOW
+
+
+def test_compute_confidence_medium_with_partial_completeness():
+    assert compute_confidence(("NovaMed", None, None), duplicate_count=0) == ConfidenceLevel.MEDIUM
+
+
+def test_compute_confidence_high_with_full_completeness():
+    assert compute_confidence(("NovaMed", "NM-MR700", 7.0), duplicate_count=0) == ConfidenceLevel.HIGH
+
+
+def test_compute_confidence_boosted_by_independent_confirmations():
+    # No completeness at all, but two independent prior reports -> boosted
+    # from LOW into MEDIUM.
+    assert compute_confidence((None, None, None), duplicate_count=2) == ConfidenceLevel.MEDIUM
+    # Some completeness AND independent confirmations -> HIGH.
+    assert compute_confidence(("NovaMed", None, None), duplicate_count=2) == ConfidenceLevel.HIGH
+
+
+def test_insert_overwrites_raw_confidence_with_computed_one():
+    store = Store(":memory:")
+    # Explicit HIGH confidence in the input, but no brand/model/age and no
+    # prior duplicates -> the store should compute LOW, not trust the input.
+    obs = store.insert(_obs(confidence=ConfidenceLevel.HIGH, brand=None))
+    assert obs.confidence == ConfidenceLevel.LOW
+
+
+# -- photo queue ----------------------------------------------------------
+
+
+def test_photo_queue_lifecycle():
+    store = Store(":memory:")
+    photo = store.insert_photo("/data/media/photos/a.jpg", customer="Hospital Alpha", technician_id="tech-01")
+    assert photo["status"] == "pending"
+
+    pending = store.next_pending_photo()
+    assert pending["id"] == photo["id"]
+
+    store.mark_photo_needs_review(photo["id"], "MR", "NovaMed", "NM-MR700", "high")
+    updated = store.get_photo(photo["id"])
+    assert updated["status"] == "needs_review"
+    assert updated["guessed_modality"] == "MR"
+
+    assert store.next_pending_photo() is None  # no more pending
+
+    store.resolve_photo(photo["id"], confirmed=True, corrected_label=None, linked_observation_id=42)
+    resolved = store.get_photo(photo["id"])
+    assert resolved["status"] == "confirmed"
+    assert resolved["linked_observation_id"] == 42
+
+
+def test_photo_queue_failed_status():
+    store = Store(":memory:")
+    photo = store.insert_photo("/data/media/photos/a.jpg", customer=None, technician_id="tech-01")
+    store.mark_photo_failed(photo["id"])
+    assert store.get_photo(photo["id"])["status"] == "failed"
+
+
+def test_list_photos_filters_by_status():
+    store = Store(":memory:")
+    p1 = store.insert_photo("/a.jpg", "Hospital Alpha", "tech-01")
+    store.insert_photo("/b.jpg", "Hospital Beta", "tech-01")
+    store.mark_photo_needs_review(p1["id"], "MR", None, None, "medium")
+    assert len(store.list_photos(status="needs_review")) == 1
+    assert len(store.list_photos(status="pending")) == 1
+    assert len(store.list_photos()) == 2
+
+
+# -- idempotency ------------------------------------------------------
+
+
+def test_idempotency_cache_roundtrip():
+    store = Store(":memory:")
+    assert store.get_cached_response("evt-1") is None
+    store.cache_response("evt-1", {"agent_message": "hola"})
+    assert store.get_cached_response("evt-1") == {"agent_message": "hola"}

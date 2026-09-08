@@ -1,9 +1,11 @@
+import asyncio
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
 from datetime import date
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from qvac_mesh_shared import (
     AnalyticsSummary,
@@ -12,11 +14,19 @@ from qvac_mesh_shared import (
     ConfidenceLevel,
     CustomerSummary,
     EquipmentObservation,
+    NaturalLanguageQueryRequest,
+    NaturalLanguageQueryResponse,
     ObservationStatus,
 )
 from qvac_mesh_shared.config import NodeSettings
 
-from . import extraction
+from . import auth, extraction
+from .schemas import (
+    PhotoRecord,
+    PhotoValidateRequest,
+    TechnicianAuthRequest,
+    TechnicianAuthResponse,
+)
 from .seed_data import SEED_OBSERVATIONS
 from .sessions import sessions
 from .store import Store
@@ -25,19 +35,41 @@ logger = logging.getLogger("installed_base.main")
 
 settings = NodeSettings()
 DB_PATH = os.environ.get("INSTALLED_BASE_DB_PATH", "/data/installed_base.db")
+MEDIA_DIR = os.environ.get("INSTALLED_BASE_MEDIA_DIR", "/data/media")
+PHOTO_QUEUE_POLL_SECONDS = 3
 
 store: Store | None = None
+
+
+async def _photo_processing_loop() -> None:
+    while True:
+        await asyncio.sleep(PHOTO_QUEUE_POLL_SECONDS)
+        photo = store.next_pending_photo() if store else None
+        if not photo:
+            continue
+        try:
+            guess = await extraction.identify_photo(settings.router_url, photo["photo_path"])
+            store.mark_photo_needs_review(
+                photo["id"], guess.get("modality"), guess.get("brand"), guess.get("model"), guess.get("confidence")
+            )
+        except Exception:
+            logger.warning("Photo %s identification failed", photo["id"], exc_info=True)
+            store.mark_photo_failed(photo["id"])
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global store
     os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
+    os.makedirs(os.path.join(MEDIA_DIR, "photos"), exist_ok=True)
+    os.makedirs(os.path.join(MEDIA_DIR, "audio"), exist_ok=True)
     store = Store(DB_PATH)
     if store.is_empty():
         store.seed(SEED_OBSERVATIONS)
         logger.info("Seeded %d demo observations", len(SEED_OBSERVATIONS))
+    photo_task = asyncio.create_task(_photo_processing_loop())
     yield
+    photo_task.cancel()
 
 
 app = FastAPI(title="Customer Installed Base Intelligence", lifespan=lifespan)
@@ -64,7 +96,7 @@ def _safe_status(value: str | None) -> ObservationStatus:
         return ObservationStatus.UNKNOWN
 
 
-def _build_observations(extracted: dict) -> list[EquipmentObservation]:
+def _build_observations(extracted: dict, observer: str, source: str) -> list[EquipmentObservation]:
     customer = extracted.get("customer")
     if not customer:
         return []
@@ -82,7 +114,8 @@ def _build_observations(extracted: dict) -> list[EquipmentObservation]:
                 approx_age_years=item.get("approx_age_years"),
                 confidence=_safe_confidence(item.get("confidence")),
                 status=_safe_status(item.get("status")),
-                source="text",
+                source=source,
+                observer=observer,
                 visit_date=date.today().isoformat(),
             )
         )
@@ -99,15 +132,9 @@ def _summarize(observations: list[EquipmentObservation]) -> str:
     return summary
 
 
-@app.get("/health")
-async def health() -> dict:
-    return {"status": "ok", "router_url": settings.router_url}
-
-
-@app.post("/capture/turn", response_model=CaptureTurnResponse)
-async def capture_turn(request: CaptureTurnRequest) -> CaptureTurnResponse:
-    session_id, session = sessions.get_or_create(request.session_id)
-    session.transcript.append(request.text)
+async def _run_turn(session_id_in: str | None, text: str, source: str, observer: str) -> CaptureTurnResponse:
+    session_id, session = sessions.get_or_create(session_id_in)
+    session.transcript.append(text)
 
     try:
         extracted = await extraction.extract_from_transcript(settings.router_url, session.transcript)
@@ -115,7 +142,7 @@ async def capture_turn(request: CaptureTurnRequest) -> CaptureTurnResponse:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     if extracted.get("ready_to_save") and extracted.get("equipment"):
-        observations = _build_observations(extracted)
+        observations = _build_observations(extracted, observer, source)
         if not observations:
             return CaptureTurnResponse(
                 session_id=session_id,
@@ -135,6 +162,135 @@ async def capture_turn(request: CaptureTurnRequest) -> CaptureTurnResponse:
     return CaptureTurnResponse(session_id=session_id, agent_message=follow_up, done=False)
 
 
+@app.get("/health")
+async def health() -> dict:
+    return {"status": "ok", "router_url": settings.router_url}
+
+
+@app.post("/auth/technician", response_model=TechnicianAuthResponse)
+async def authenticate(request: TechnicianAuthRequest) -> TechnicianAuthResponse:
+    resolved = auth.authenticate_pin(request.pin)
+    if resolved is None:
+        raise HTTPException(status_code=401, detail="Invalid PIN")
+    technician_id, name = resolved
+    token = auth.tokens.issue(technician_id, name)
+    return TechnicianAuthResponse(token=token, technician_id=technician_id, name=name)
+
+
+@app.post("/capture/turn", response_model=CaptureTurnResponse)
+async def capture_turn(
+    request: CaptureTurnRequest, technician: tuple[str, str] = Depends(auth.get_current_technician)
+) -> CaptureTurnResponse:
+    if request.client_event_id:
+        cached = store.get_cached_response(request.client_event_id)
+        if cached is not None:
+            return CaptureTurnResponse.model_validate(cached)
+
+    _, name = technician
+    response = await _run_turn(request.session_id, request.text, "text", name)
+
+    if request.client_event_id:
+        store.cache_response(request.client_event_id, response.model_dump(mode="json"))
+    return response
+
+
+@app.post("/capture/turn/voice", response_model=CaptureTurnResponse)
+async def capture_turn_voice(
+    audio: UploadFile = File(...),
+    session_id: str | None = Form(default=None),
+    client_event_id: str | None = Form(default=None),
+    technician: tuple[str, str] = Depends(auth.get_current_technician),
+) -> CaptureTurnResponse:
+    if client_event_id:
+        cached = store.get_cached_response(client_event_id)
+        if cached is not None:
+            return CaptureTurnResponse.model_validate(cached)
+
+    audio_path = os.path.join(MEDIA_DIR, "audio", f"{uuid.uuid4()}.wav")
+    with open(audio_path, "wb") as f:
+        f.write(await audio.read())
+
+    try:
+        text = await extraction.transcribe_audio(settings.router_url, audio_path)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    _, name = technician
+    response = await _run_turn(session_id, text, "voice", name)
+
+    if client_event_id:
+        store.cache_response(client_event_id, response.model_dump(mode="json"))
+    return response
+
+
+@app.post("/photos", response_model=PhotoRecord)
+async def upload_photo(
+    photo: UploadFile = File(...),
+    customer: str | None = Form(default=None),
+    technician: tuple[str, str] = Depends(auth.get_current_technician),
+) -> PhotoRecord:
+    technician_id, _ = technician
+    photo_path = os.path.join(MEDIA_DIR, "photos", f"{uuid.uuid4()}.jpg")
+    with open(photo_path, "wb") as f:
+        f.write(await photo.read())
+    record = store.insert_photo(photo_path, customer, technician_id)
+    return PhotoRecord.model_validate(record)
+
+
+@app.get("/photos", response_model=list[PhotoRecord])
+async def list_photos(status: str | None = None) -> list[PhotoRecord]:
+    return [PhotoRecord.model_validate(p) for p in store.list_photos(status)]
+
+
+@app.post("/photos/{photo_id}/validate", response_model=EquipmentObservation)
+async def validate_photo(
+    photo_id: int,
+    request: PhotoValidateRequest,
+    technician: tuple[str, str] = Depends(auth.get_current_technician),
+) -> EquipmentObservation:
+    if request.client_event_id:
+        cached = store.get_cached_response(request.client_event_id)
+        if cached is not None:
+            return EquipmentObservation.model_validate(cached)
+
+    photo = store.get_photo(photo_id)
+    if photo is None:
+        raise HTTPException(status_code=404, detail=f"Photo {photo_id} not found")
+    if photo["status"] not in ("needs_review",):
+        raise HTTPException(status_code=400, detail=f"Photo {photo_id} is not awaiting review (status={photo['status']})")
+    if not photo["customer"]:
+        raise HTTPException(status_code=400, detail="Photo has no customer associated -- pass one on upload")
+
+    _, name = technician
+    if request.confirmed:
+        modality, brand, model_ = photo["guessed_modality"], photo["guessed_brand"], photo["guessed_model"]
+        corrected_label = None
+    else:
+        if not request.correction:
+            raise HTTPException(status_code=400, detail="confirmed=false requires a correction")
+        modality, brand, model_ = request.correction.modality, request.correction.brand, request.correction.model
+        corrected_label = modality
+
+    observation = store.insert(
+        EquipmentObservation(
+            customer=photo["customer"],
+            modality=modality or "Unknown",
+            brand=brand,
+            model=model_,
+            confidence=ConfidenceLevel.HIGH,  # a human validated it
+            status=ObservationStatus.CONFIRMED,
+            source="photo",
+            observer=name,
+            visit_date=date.today().isoformat(),
+        )
+    )
+    store.resolve_photo(photo_id, request.confirmed, corrected_label, observation.id)
+
+    if request.client_event_id:
+        store.cache_response(request.client_event_id, observation.model_dump(mode="json"))
+    return observation
+
+
 @app.get("/customers", response_model=list[CustomerSummary])
 async def list_customers() -> list[CustomerSummary]:
     return store.list_customers_summary()
@@ -151,3 +307,27 @@ async def customer_detail(customer: str) -> list[EquipmentObservation]:
 @app.get("/analytics", response_model=AnalyticsSummary)
 async def analytics() -> AnalyticsSummary:
     return store.compute_analytics()
+
+
+@app.post("/query", response_model=NaturalLanguageQueryResponse)
+async def query(request: NaturalLanguageQueryRequest) -> NaturalLanguageQueryResponse:
+    try:
+        filters = await extraction.interpret_query(settings.router_url, request.question)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    results = store.list_all()
+    if country := filters.get("country"):
+        results = [o for o in results if o.country and o.country.lower() == country.lower()]
+    if modality := filters.get("modality"):
+        results = [o for o in results if o.modality.lower() == modality.lower()]
+    if (min_age := filters.get("min_age_years")) is not None:
+        results = [o for o in results if o.approx_age_years is not None and o.approx_age_years >= min_age]
+    if (max_age := filters.get("max_age_years")) is not None:
+        results = [o for o in results if o.approx_age_years is not None and o.approx_age_years <= max_age]
+    if status := filters.get("status"):
+        results = [o for o in results if o.status.value == status.lower()]
+    if confidence := filters.get("confidence"):
+        results = [o for o in results if o.confidence.value == confidence.lower()]
+
+    return NaturalLanguageQueryResponse(question=request.question, interpreted_filter=filters, results=results)

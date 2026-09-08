@@ -1,8 +1,11 @@
 """Turns a field colleague's natural-language observation into structured
-equipment data, using a real QVAC peer for the actual inference -- this
-module never calls anything but the mesh's own Peer (`POST /infer`), which
-is what makes the hard requirement ("QVAC on-device or P2P, never cloud")
-true by construction: nothing here can reach a cloud API even by accident.
+equipment data, using the mesh's Router for the actual inference -- this
+module never discovers or calls a Peer directly, it only ever talks to
+`ROUTER_URL/infer`. That's what makes the hard requirement ("QVAC
+on-device or P2P, never cloud") true by construction *and* keeps the
+Router as the single place that decides which model/peer handles a
+request, as it was always meant to (RAG/completion routing already worked
+this way; photo/voice capabilities now go through the same door).
 
 Extraction is prompt-based (ask the model for a single JSON object) with
 defensive parsing, not grammar-constrained decoding -- `completion()` in
@@ -23,7 +26,7 @@ import httpx
 
 logger = logging.getLogger("installed_base.extraction")
 
-_INSTRUCTIONS = """You extract structured installed-base equipment data from a field colleague's observation about a hospital/clinic visit.
+_TEXT_INSTRUCTIONS = """You extract structured installed-base equipment data from a field colleague's observation about a hospital/clinic visit.
 
 Extract, when known:
 - customer: hospital/facility name
@@ -50,7 +53,7 @@ JSON: {"customer": null, "city": null, "country": null, "equipment": [{"modality
 Conversation so far (most recent last):
 """
 
-_FALLBACK_RESULT = {
+_TEXT_FALLBACK = {
     "customer": None,
     "city": None,
     "country": None,
@@ -60,54 +63,111 @@ _FALLBACK_RESULT = {
     "ready_to_save": False,
 }
 
+_PHOTO_INSTRUCTIONS = """Look at the attached photo of a piece of hospital equipment (or its label/nameplate).
 
-def build_prompt(transcript: list[str]) -> str:
+Identify, when visible:
+- modality: a short label such as MR, CT, Ultrasound, X-Ray, Patient Monitoring, Image Guided Therapy
+- brand: the manufacturer name if visible on a label
+- model: the model/product name if visible
+- confidence: "high" | "medium" | "low" based on how clearly the label/equipment is visible
+- reasoning: one short sentence on what you saw that led to this guess
+
+Respond with ONLY one JSON object, no prose, no markdown fences:
+{"modality": string|null, "brand": string|null, "model": string|null, "confidence": string, "reasoning": string}
+"""
+
+_PHOTO_FALLBACK = {
+    "modality": None,
+    "brand": None,
+    "model": None,
+    "confidence": "low",
+    "reasoning": "Could not analyze the image (peer unavailable or response unparsable).",
+}
+
+_QUERY_INSTRUCTIONS = """Translate this question about an installed-base equipment dataset into a JSON filter.
+
+Fields (all optional, omit what the question doesn't specify):
+{"country": string, "modality": string, "min_age_years": number, "max_age_years": number, "status": string, "confidence": string}
+
+Respond with ONLY one JSON object, no prose, no markdown fences.
+
+Example
+Question: "customers in Brazil with MR systems older than 7 years"
+JSON: {"country": "Brazil", "modality": "MR", "min_age_years": 7}
+
+Question: """
+
+_QUERY_FALLBACK: dict = {}
+
+
+def build_text_prompt(transcript: list[str]) -> str:
     convo = "\n".join(f"User: {line}" for line in transcript)
-    return f"{_INSTRUCTIONS}{convo}\nJSON:"
+    return f"{_TEXT_INSTRUCTIONS}{convo}\nJSON:"
 
 
-def parse_extraction(raw_answer: str) -> dict:
+def build_query_prompt(question: str) -> str:
+    return f"{_QUERY_INSTRUCTIONS}{question}\nJSON:"
+
+
+def _safe_parse_json(raw_answer: str, fallback: dict, defaults: dict | None = None) -> dict:
     match = re.search(r"\{.*\}", raw_answer, re.S)
     if not match:
-        logger.warning("No JSON object found in extraction answer: %r", raw_answer[:200])
-        return dict(_FALLBACK_RESULT)
+        logger.warning("No JSON object found in model answer: %r", raw_answer[:200])
+        return dict(fallback)
     try:
         parsed = json.loads(match.group(0))
     except json.JSONDecodeError:
-        logger.warning("Malformed JSON in extraction answer: %r", raw_answer[:200])
-        return dict(_FALLBACK_RESULT)
-
-    parsed.setdefault("equipment", [])
-    parsed.setdefault("missing_required", [])
-    parsed.setdefault("follow_up_question", None)
-    parsed.setdefault("ready_to_save", False)
+        logger.warning("Malformed JSON in model answer: %r", raw_answer[:200])
+        return dict(fallback)
+    for key, value in (defaults or {}).items():
+        parsed.setdefault(key, value)
     return parsed
 
 
-async def pick_peer_base_url(router_url: str) -> str:
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        resp = await client.get(f"{router_url}/peers")
-        resp.raise_for_status()
-        peers = resp.json()
-
-    available = [p for p in peers if p.get("available")]
-    if not available:
-        raise RuntimeError("No QVAC peer is registered/available yet")
-    return available[0]["base_url"]
+def parse_extraction(raw_answer: str) -> dict:
+    return _safe_parse_json(
+        raw_answer,
+        _TEXT_FALLBACK,
+        defaults={"equipment": [], "missing_required": [], "follow_up_question": None, "ready_to_save": False},
+    )
 
 
-async def call_peer(peer_base_url: str, prompt: str) -> str:
+def parse_photo_identification(raw_answer: str) -> dict:
+    return _safe_parse_json(raw_answer, _PHOTO_FALLBACK, defaults=dict(_PHOTO_FALLBACK))
+
+
+def parse_query_filter(raw_answer: str) -> dict:
+    return _safe_parse_json(raw_answer, _QUERY_FALLBACK)
+
+
+async def _router_infer(router_url: str, **payload) -> str:
+    payload.setdefault("request_id", str(uuid.uuid4()))
     async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.post(
-            f"{peer_base_url}/infer",
-            json={"request_id": str(uuid.uuid4()), "query": prompt, "context": None},
-        )
+        resp = await client.post(f"{router_url}/infer", json=payload)
+        if resp.status_code == 503:
+            raise RuntimeError(resp.json().get("detail", "Router has no available peer for this capability"))
         resp.raise_for_status()
-        return resp.json()["answer"]
+        return resp.json()["text"]
 
 
 async def extract_from_transcript(router_url: str, transcript: list[str]) -> dict:
-    peer_base_url = await pick_peer_base_url(router_url)
-    prompt = build_prompt(transcript)
-    answer = await call_peer(peer_base_url, prompt)
+    prompt = build_text_prompt(transcript)
+    answer = await _router_infer(router_url, capability="completion", query=prompt)
     return parse_extraction(answer)
+
+
+async def identify_photo(router_url: str, image_path: str) -> dict:
+    answer = await _router_infer(
+        router_url, capability="multimodal", query=_PHOTO_INSTRUCTIONS, image_path=image_path
+    )
+    return parse_photo_identification(answer)
+
+
+async def transcribe_audio(router_url: str, audio_path: str) -> str:
+    return await _router_infer(router_url, capability="transcription", audio_path=audio_path)
+
+
+async def interpret_query(router_url: str, question: str) -> dict:
+    prompt = build_query_prompt(question)
+    answer = await _router_infer(router_url, capability="completion", query=prompt)
+    return parse_query_filter(answer)
