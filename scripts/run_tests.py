@@ -41,6 +41,7 @@ MODULES: dict[str, dict] = {
         "cwd": ROOT / "services" / "installed-base",
     },
     "frontend": {"cmd": [NPM, "test"], "cwd": ROOT / "services" / "frontend"},
+    "technician-app": {"cmd": [NPM, "test"], "cwd": ROOT / "apps" / "technician-app"},
 }
 
 

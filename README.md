@@ -38,7 +38,7 @@ es decir, se declara íntegramente como preparación previa, verificable con
 trabajo genuinamente realizado dentro de la ventana oficial de 48 horas**
 — mismo criterio de verificación (`git log`), sin excepción. Todo lo que
 se agregue desde ese momento (verificación real con Docker, pruebas con
-fotos/audio reales, la app nativa de Android, cualquier feature nueva)
+fotos/audio reales, la app móvil de técnicos, cualquier feature nueva)
 cuenta como el producto construido dentro del plazo.
 
 Nota honesta sobre el criterio **Technical (35%, "uso genuino de QVAC")**:
@@ -138,7 +138,8 @@ Frontend --POST /ask-------------> Router --POST /search--> RAG
 | **Router** | `services/router` | El cerebro: registro de Peers (auto-anuncio, sin IPs hardcodeadas) y `POST /infer` — decide qué Peer atiende cada capacidad. También `POST /ask` (RAG + completion, la demo genérica original del mesh). |
 | **Peer** | `services/peer` | Una imagen genérica que corre un modelo QVAC real y expone `/infer`/`/transcribe`. Se instancia 4 veces con distinta config: `peer-medium`, `peer-gpu` (texto), `peer-vision` (fotos), `peer-voice` (audio). |
 | **RAG** | `services/rag` | Conocimiento empresarial local (docs de ejemplo indexados con QVAC). Usado por la demo genérica del mesh (`POST /ask`), no por Installed Base. |
-| **Frontend** | `services/frontend` | React/Vite: pestañas "Capturar visita" (login por PIN), "Clientes", "Analytics", más "Mesh Demo" (el chat genérico). Sirve de referencia mientras se construye la app nativa real de los técnicos. |
+| **Frontend** | `services/frontend` | React/Vite: pestañas "Capturar visita" (login por PIN), "Clientes", "Analytics", más "Mesh Demo" (el chat genérico). Sirve de referencia mientras se construye la app móvil real de los técnicos. |
+| **Technician App** | `apps/technician-app` | App móvil (Expo/React Native/TypeScript) para los técnicos de campo — QVAC corriendo en el propio teléfono. Changelog y README propios en esa carpeta (stack distinto al resto del monorepo). |
 | **Shared** | `shared/py/qvac_mesh_shared` | Los contratos (Pydantic) que hablan todos los servicios entre sí — un solo lugar de verdad para los tipos de dato. Espejo en TypeScript en `shared-ts/types.ts`. |
 
 ## Cómo lo montás
@@ -256,11 +257,14 @@ python scripts/run_tests.py --modules rag router  # un subconjunto
 python scripts/run_tests.py --list             # ver nombres disponibles
 ```
 
-Módulos: `shared`, `rag`, `router`, `peer`, `installed-base`, `frontend`.
-Los tests corren contra peers **mockeados** a propósito (mismo patrón en
-todos los servicios) para no depender de descargar modelos ni tener
-Docker/red disponible — la inferencia real se prueba levantando el mesh de
-verdad (`docker compose up`) y probando con los ejemplos de arriba.
+Módulos: `shared`, `rag`, `router`, `peer`, `installed-base`, `frontend`,
+`technician-app`. Los tests corren contra peers **mockeados** a propósito
+(mismo patrón en todos los módulos, incluyendo el SDK nativo de QVAC en
+`technician-app`) para no depender de descargar modelos, tener Docker/red
+disponible, ni un teléfono físico conectado — la inferencia real se prueba
+levantando el mesh de verdad (`docker compose up`) y probando con los
+ejemplos de arriba, o corriendo `technician-app` en un dispositivo (ver
+`apps/technician-app/README.md`).
 
 ## Arquitectura a la que apunta el proyecto completo
 
@@ -284,13 +288,17 @@ USUARIO -> ASSISTANT -> AI ROUTER (local)
 ```
 
 Y para Installed Base específicamente, la meta es que cada técnico tenga
-una **app nativa** (React Native/Flutter — se construye en otro
-workstream, no en este repo) funcionando como nodo offline-first: guarda
-en su propio SQLite cuando no hay red, y sincroniza contra estos mismos
-endpoints al recuperar conexión. Por eso `CaptureTurnRequest` y
-`/photos/{id}/validate` ya aceptan un `client_event_id`: si la app
-reintenta un envío que ya se procesó, el servidor devuelve la respuesta
-cacheada en vez de duplicar la observación.
+una **app móvil** (`apps/technician-app`, Expo/React Native/TypeScript —
+QVAC en mobile corre así, no hay SDK nativo Kotlin) funcionando como nodo
+offline-first: corre la extracción de texto **en el propio teléfono**
+(nada de infraestructura en el hospital del cliente — solo el celular), y
+sincroniza contra estos mismos endpoints cuando recupera conexión. Por eso
+`CaptureTurnRequest` y `/photos/{id}/validate` ya aceptan un
+`client_event_id`: si la app reintenta un envío que ya se procesó, el
+servidor devuelve la respuesta cacheada en vez de duplicar la observación.
+Ver `apps/technician-app/README.md` para el estado actual (hoy: smoke test
+del ciclo de vida de QVAC, falta el flujo de captura real + la cola
+offline).
 
 **¿Se puede correr esto en un VPS cloud?** Sí — el único requisito es que
 la inferencia corra on-device o delegada P2P *entre nodos QVAC*, nunca a

@@ -4,6 +4,10 @@ Un componente, una sección. Cada línea es `commit` + fecha + qué cambió, par
 poder rastrear cuándo y en qué commit cambió cada pieza sin tener que bucear
 en `git log`. Entradas más nuevas arriba de cada sección.
 
+La app móvil de técnicos (`apps/technician-app`, Expo/React Native) tiene su
+propio changelog en esa carpeta -- stack y ciclo de vida distintos al resto
+de este monorepo.
+
 ## RAG
 
 - `616bda0` 2026-09-07: suite pytest para `/health` y `/search` (modo fallback keyword-search)
