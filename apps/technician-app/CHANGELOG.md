@@ -7,3 +7,4 @@ arriba.
 
 ## Setup
 
+- `8df8643` 2026-09-08: scaffold inicial (Expo SDK 54 + TypeScript), `@qvac/sdk` instalado y configurado (expo-plugin, minSdkVersion 29, `qvac.config.json` con `llamacpp-completion`), smoke test end-to-end del ciclo de vida de QVAC (descarga -> carga -> inferencia local) con Jest + React Native Testing Library
