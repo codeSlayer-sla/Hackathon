@@ -23,6 +23,7 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 ## Frontend
 
+- `c7454a2` 2026-09-08: login por PIN en CaptureView (requerido ahora por `/capture/turn`)
 - `428615c` 2026-09-07: pestanas Installed Base (Capturar visita / Clientes / Analytics) + Mesh Demo movido a `mesh/MeshDemoView.tsx`, con suite vitest por vista nueva
 - `4216d70` 2026-09-07: suite vitest + testing-library para el chat (render + estado vacio de peers)
 - `8aa56e9` 2026-09-07: chat React/Vite + panel de peers, contra Router `/ask` y `/peers`, tipado con `shared-ts/types.ts`
