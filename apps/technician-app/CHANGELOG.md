@@ -7,6 +7,8 @@ arriba.
 
 ## Setup
 
+- `b288a83` 2026-09-09: pantalla de configuracion gana "pais de operacion" -- se usa siempre en vez del pais que adivine el modelo (eliminaba una alucinacion completa, no solo la mitiga); instrucciones de extraccion ahora prohiben explicitamente inventar country/brand/model o cambiar la modalidad al azar cuando no esta seguro, debe pedir marca/numero de modelo en su lugar
+- `4f3cb67` 2026-09-09: sesiones de captura persistidas en SQLite (`capture_sessions`) en vez de vivir solo en el estado de React de `CaptureScreen` -- antes cambiar de tab perdia la conversacion en curso; ahora se pueden tener varias visitas abiertas a la vez, cada una sigue procesando en segundo plano aunque no se este viendo, y el acceso al LLM se serializa (un solo modelo cargado, una inferencia a la vez)
 - `b71d0cf` 2026-09-09: `predict: 512` en la carga del LLM + `maxItems: 20` en el array de equipos del schema de extraccion -- sin tope, un loop de repeticion del modelo (falla conocida en modelos chicos) podia generar indefinidamente y nunca terminar, indistinguible de que la app se colgó
 - `93b2408` 2026-09-09: conversacion de captura reestructurada a multi-turno real (system + user/assistant alternados) con `kvCache: true` -- antes se reenviaba instrucciones + todo el transcript como un solo prompt gigante en cada mensaje, reprocesado entero cada vez; ahora solo se reprocesa el mensaje nuevo contra el prefijo cacheado
 - `8c3ff5f` 2026-09-09: extraccion ahora usa `responseFormat: json_schema` (grammar constraint de llama.cpp) en vez de confiar solo en la instruccion del prompt -- el modelo de 1B ignoraba "responde solo JSON" seguido y quedaba pegado en el fallback "no pude entender el mensaje"
