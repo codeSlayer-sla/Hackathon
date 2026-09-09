@@ -24,6 +24,9 @@ from . import auth, extraction
 from .schemas import (
     PhotoRecord,
     PhotoValidateRequest,
+    SyncAcceptedItem,
+    SyncRequest,
+    SyncResponse,
     TechnicianAuthRequest,
     TechnicianAuthResponse,
 )
@@ -289,6 +292,47 @@ async def validate_photo(
     if request.client_event_id:
         store.cache_response(request.client_event_id, observation.model_dump(mode="json"))
     return observation
+
+
+@app.post("/sync", response_model=SyncResponse)
+async def sync(
+    request: SyncRequest, technician: tuple[str, str] = Depends(auth.get_current_technician)
+) -> SyncResponse:
+    """Batch-accepts the technician app's offline SQLite queue. Equipment is
+    already structured (extracted on-device before saving locally), so this
+    just persists it -- no Router/extraction call needed. Idempotent per
+    (technician, local_id): a retried sync after a dropped connection replays
+    the same accepted ids instead of duplicating observations."""
+    _, name = technician
+    accepted: list[SyncAcceptedItem] = []
+    for item in request.pending_observations:
+        client_event_id = f"mobile-sync-{name}-{item.local_id}"
+        cached = store.get_cached_response(client_event_id)
+        if cached is not None:
+            accepted.append(SyncAcceptedItem(local_id=item.local_id, observation_id=cached["observation_id"]))
+            continue
+
+        observation = store.insert(
+            EquipmentObservation(
+                customer=item.customer,
+                city=item.city,
+                country=item.country,
+                modality=item.modality,
+                quantity=item.quantity,
+                brand=item.brand,
+                model=item.model,
+                approx_age_years=item.approx_age_years,
+                confidence=_safe_confidence(item.confidence),
+                status=_safe_status(item.status),
+                source=item.source,
+                observer=name,
+                visit_date=item.visit_date,
+            )
+        )
+        store.cache_response(client_event_id, {"observation_id": observation.id})
+        accepted.append(SyncAcceptedItem(local_id=item.local_id, observation_id=observation.id))
+
+    return SyncResponse(accepted=accepted)
 
 
 @app.get("/customers", response_model=list[CustomerSummary])

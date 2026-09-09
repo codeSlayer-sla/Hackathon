@@ -42,3 +42,36 @@ class PhotoValidateRequest(BaseModel):
     confirmed: bool
     correction: PhotoCorrection | None = None
     client_event_id: str | None = None
+
+
+class SyncObservationItem(BaseModel):
+    """One row from the technician app's local SQLite queue, already
+    structured by the on-device extraction -- no LLM call needed here."""
+
+    local_id: int
+    customer: str
+    city: str | None = None
+    country: str | None = None
+    modality: str
+    quantity: int | None = None
+    brand: str | None = None
+    model: str | None = None
+    approx_age_years: float | None = None
+    confidence: str
+    status: str
+    source: str
+    observer: str
+    visit_date: str
+
+
+class SyncRequest(BaseModel):
+    pending_observations: list[SyncObservationItem]
+
+
+class SyncAcceptedItem(BaseModel):
+    local_id: int
+    observation_id: int
+
+
+class SyncResponse(BaseModel):
+    accepted: list[SyncAcceptedItem]
