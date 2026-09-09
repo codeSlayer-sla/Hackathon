@@ -4,7 +4,6 @@ import {
   StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import * as Crypto from 'expo-crypto';
-import { Ionicons } from '@expo/vector-icons';
 import { findCachedTechnicianByPinHash, getCachedPepper } from '../db/database';
 import { refreshRoster } from '../sync/syncService';
 import { getServerUrl } from '../config/serverConfig';
@@ -117,8 +116,7 @@ export default function LoginScreen({ onLogin, onEditServer }: Props) {
         <Text style={styles.hint}>Demo: 1234 · 2345 · 3456</Text>
 
         <TouchableOpacity onPress={onEditServer} style={styles.serverLink}>
-          <Ionicons name="settings-outline" size={13} color="#4a5568" />
-          <Text style={styles.serverLinkText}>Configurar servidor</Text>
+          <Text style={styles.serverLinkText}>⚙ Configurar servidor</Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -137,6 +135,6 @@ const styles = StyleSheet.create({
   btn: { backgroundColor: '#1F5EAA', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   hint: { color: '#4a5568', fontSize: 12, textAlign: 'center', marginTop: 20 },
-  serverLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 16 },
+  serverLink: { marginTop: 16, alignItems: 'center' },
   serverLinkText: { color: '#4a5568', fontSize: 12 },
 });

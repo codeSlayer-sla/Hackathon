@@ -4,7 +4,6 @@ import {
   StyleSheet, ActivityIndicator, Alert,
 } from 'react-native';
 import { Audio } from 'expo-av';
-import { Ionicons } from '@expo/vector-icons';
 import { ensureLLM, ensureWhisper, runTranscription, getLoadedLLMId } from '../qvac/models';
 import { startConversation } from '../qvac/extraction';
 import {
@@ -151,8 +150,7 @@ function SessionListView({
           <Text style={styles.badgeText}>IA local</Text>
         </View>
         <TouchableOpacity style={styles.newBtn} onPress={onCreate}>
-          <Ionicons name="add" size={14} color="#fff" />
-          <Text style={styles.newBtnText}>Nueva visita</Text>
+          <Text style={styles.newBtnText}>+ Nueva visita</Text>
         </TouchableOpacity>
       </View>
 
@@ -175,15 +173,9 @@ function SessionListView({
                   <Text style={styles.processingText}>Procesando…</Text>
                 </View>
               ) : item.status === 'review' ? (
-                <View style={styles.processingRow}>
-                  <Ionicons name="clipboard-outline" size={13} color="#f59e0b" />
-                  <Text style={styles.reviewText}>Esperando confirmación</Text>
-                </View>
+                <Text style={styles.reviewText}>📝 Esperando confirmación</Text>
               ) : item.status === 'done' ? (
-                <View style={styles.processingRow}>
-                  <Ionicons name="checkmark-circle" size={13} color="#22c55e" />
-                  <Text style={styles.doneText}>Listo -- toca para ver</Text>
-                </View>
+                <Text style={styles.doneText}>✅ Listo -- toca para ver</Text>
               ) : (
                 <Text style={styles.idleText}>Esperando respuesta del técnico</Text>
               )}
@@ -349,12 +341,11 @@ function CaptureConversation({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <Ionicons name="chevron-back" size={18} color="#8fa3bf" />
-          <Text style={styles.backText}>Visitas</Text>
+        <TouchableOpacity onPress={onBack}>
+          <Text style={styles.backText}>‹ Visitas</Text>
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { flex: 1, textAlign: 'center' }]}>Capturar visita</Text>
-        <View style={{ width: 80 }} />
+        <View style={{ width: 60 }} />
       </View>
 
       {!loaded ? (
@@ -385,8 +376,7 @@ function CaptureConversation({
 
           {done ? (
             <View style={styles.inputRow}>
-              <TouchableOpacity style={[styles.sendBtn, styles.doneBtn]} onPress={onBack}>
-                <Ionicons name="checkmark-circle" size={18} color="#fff" />
+              <TouchableOpacity style={[styles.sendBtn, { flex: 1 }]} onPress={onBack}>
                 <Text style={styles.doneBtnText}>Volver a Visitas</Text>
               </TouchableOpacity>
             </View>
@@ -395,8 +385,7 @@ function CaptureConversation({
               {review && (
                 <View style={styles.confirmRow}>
                   <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
-                    <Ionicons name="checkmark-circle" size={18} color="#fff" />
-                    <Text style={styles.confirmBtnText}>Confirmar y guardar</Text>
+                    <Text style={styles.confirmBtnText}>✅ Confirmar y guardar</Text>
                   </TouchableOpacity>
                   <Text style={styles.confirmHint}>¿Algo mal? Escríbelo abajo en vez de confirmar.</Text>
                 </View>
@@ -418,7 +407,7 @@ function CaptureConversation({
                 >
                   {transcribing
                     ? <ActivityIndicator color="#fff" size="small" />
-                    : <Ionicons name={isRecording ? 'stop' : 'mic'} size={20} color="#fff" />
+                    : <Text style={styles.micIcon}>{isRecording ? '⏹' : '🎤'}</Text>
                   }
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -426,7 +415,7 @@ function CaptureConversation({
                   onPress={() => sendMessage(input)}
                   disabled={!input.trim() || processing || transcribing}
                 >
-                  <Ionicons name="send" size={18} color="#fff" />
+                  <Text style={styles.sendIcon}>➤</Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -449,12 +438,11 @@ const styles = StyleSheet.create({
   retryText: { color: '#fff', fontWeight: '700' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#253060', gap: 8 },
   headerTitle: { color: '#e2e8f0', fontSize: 16, fontWeight: '700' },
-  backBtn: { flexDirection: 'row', alignItems: 'center', width: 80 },
-  backText: { color: '#8fa3bf', fontSize: 14 },
+  backText: { color: '#8fa3bf', fontSize: 14, width: 60 },
   badge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#0f2318', borderRadius: 20, paddingVertical: 4, paddingHorizontal: 10 },
   badgeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#22c55e' },
   badgeText: { color: '#86efac', fontSize: 11, fontWeight: '700' },
-  newBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#1F5EAA', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12 },
+  newBtn: { backgroundColor: '#1F5EAA', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12 },
   newBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   empty: { color: '#e2e8f0', fontSize: 16, fontWeight: '600', marginBottom: 8 },
   emptySub: { color: '#8fa3bf', fontSize: 13, textAlign: 'center' },
@@ -481,8 +469,9 @@ const styles = StyleSheet.create({
   textInput: { flex: 1, backgroundColor: '#131929', borderWidth: 1, borderColor: '#253060', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, color: '#e2e8f0', fontSize: 14, maxHeight: 100 },
   sendBtn: { backgroundColor: '#1F5EAA', borderRadius: 10, width: 44, justifyContent: 'center', alignItems: 'center' },
   sendBtnDisabled: { backgroundColor: '#253060' },
-  doneBtn: { flex: 1, flexDirection: 'row', width: undefined, gap: 8 },
+  sendIcon: { color: '#fff', fontSize: 18 },
   doneBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   micBtn: { backgroundColor: '#253060', borderRadius: 10, width: 44, justifyContent: 'center', alignItems: 'center' },
   micBtnRecording: { backgroundColor: '#c53030' },
+  micIcon: { fontSize: 20 },
 });

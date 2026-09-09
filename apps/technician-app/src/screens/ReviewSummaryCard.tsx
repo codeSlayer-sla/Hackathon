@@ -1,14 +1,12 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { ReviewSummary } from '../capture/sessionRunner';
 
 export default function ReviewSummaryCard({ review }: { review: ReviewSummary }) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <Ionicons name="clipboard-outline" size={16} color="#f59e0b" />
-        <Text style={styles.headerText}>Listo para guardar</Text>
+        <Text style={styles.headerText}>📝 Listo para guardar</Text>
       </View>
 
       <View style={styles.row}>

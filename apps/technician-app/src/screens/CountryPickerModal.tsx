@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import {
   Modal, View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { COUNTRIES } from '../config/countries';
 
 interface Props {
@@ -35,18 +34,15 @@ export default function CountryPickerModal({ visible, selected, onSelect, onClos
           </TouchableOpacity>
         </View>
 
-        <View style={styles.searchWrap}>
-          <Ionicons name="search" size={16} color="#4a5568" style={styles.searchIcon} />
-          <TextInput
-            style={styles.search}
-            placeholder="Buscar…"
-            placeholderTextColor="#4a5568"
-            value={query}
-            onChangeText={setQuery}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-        </View>
+        <TextInput
+          style={styles.search}
+          placeholder="Buscar…"
+          placeholderTextColor="#4a5568"
+          value={query}
+          onChangeText={setQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
 
         <FlatList
           data={filtered}
@@ -58,7 +54,7 @@ export default function CountryPickerModal({ visible, selected, onSelect, onClos
               onPress={() => { onSelect(item); onClose(); }}
             >
               <Text style={[styles.rowText, item === selected && styles.rowTextSelected]}>{item}</Text>
-              {item === selected && <Ionicons name="checkmark" size={18} color="#00C4CC" />}
+              {item === selected && <Text style={styles.check}>✓</Text>}
             </TouchableOpacity>
           )}
           ListEmptyComponent={<Text style={styles.empty}>Sin resultados.</Text>}
@@ -73,12 +69,11 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 12 },
   title: { color: '#e2e8f0', fontSize: 18, fontWeight: '700' },
   close: { color: '#8fa3bf', fontSize: 14 },
-  searchWrap: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 8, backgroundColor: '#1a2240', borderWidth: 1, borderColor: '#253060', borderRadius: 10, paddingHorizontal: 14 },
-  searchIcon: { marginRight: 8 },
-  search: { flex: 1, paddingVertical: 12, color: '#e2e8f0', fontSize: 15 },
+  search: { marginHorizontal: 20, marginBottom: 8, backgroundColor: '#1a2240', borderWidth: 1, borderColor: '#253060', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, color: '#e2e8f0', fontSize: 15 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#1a2240' },
   rowSelected: { backgroundColor: '#131929' },
   rowText: { color: '#e2e8f0', fontSize: 15 },
   rowTextSelected: { color: '#00C4CC', fontWeight: '700' },
+  check: { color: '#00C4CC', fontSize: 16, fontWeight: '700' },
   empty: { color: '#4a5568', textAlign: 'center', marginTop: 40, fontSize: 14 },
 });

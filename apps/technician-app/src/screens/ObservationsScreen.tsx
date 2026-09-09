@@ -1,24 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { listObservations, type LocalObservation } from '../db/database';
 
 const STATUS_COLOR: Record<string, string> = {
   pending: '#f59e0b',
   synced: '#22c55e',
   failed: '#ef4444',
-};
-
-const STATUS_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
-  pending: 'time-outline',
-  synced: 'checkmark-circle',
-  failed: 'close-circle',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'pendiente',
-  synced: 'sincronizado',
-  failed: 'error',
 };
 
 const CONFIDENCE_COLOR: Record<string, string> = {
@@ -60,9 +47,8 @@ export default function ObservationsScreen() {
           <View style={styles.cardHeader}>
             <Text style={styles.customer}>{item.customer}</Text>
             <View style={[styles.syncBadge, { backgroundColor: STATUS_COLOR[item.sync_status] + '22' }]}>
-              <Ionicons name={STATUS_ICON[item.sync_status]} size={11} color={STATUS_COLOR[item.sync_status]} />
               <Text style={[styles.syncText, { color: STATUS_COLOR[item.sync_status] }]}>
-                {STATUS_LABEL[item.sync_status]}
+                {item.sync_status === 'pending' ? '⏳ pendiente' : item.sync_status === 'synced' ? '✓ sincronizado' : '✗ error'}
               </Text>
             </View>
           </View>
@@ -93,7 +79,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#131929', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#253060' },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, gap: 8 },
   customer: { color: '#e2e8f0', fontSize: 15, fontWeight: '700', flex: 1 },
-  syncBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, paddingVertical: 2, paddingHorizontal: 8 },
+  syncBadge: { borderRadius: 20, paddingVertical: 2, paddingHorizontal: 8 },
   syncText: { fontSize: 11, fontWeight: '700' },
   location: { color: '#8fa3bf', fontSize: 12, marginBottom: 8 },
   equipRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },

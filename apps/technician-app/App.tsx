@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { initDatabase } from './src/db/database';
 import { getServerUrl } from './src/config/serverConfig';
 import { preloadLLM } from './src/qvac/models';
@@ -84,7 +83,7 @@ export default function App() {
         <View style={styles.logo}><Text style={styles.logoText}>PHILIPS</Text></View>
         <Text style={styles.headerName}>{technicianName}</Text>
         <TouchableOpacity onPress={() => setShowServerSetup(true)}>
-          <Ionicons name="settings-outline" size={18} color="#4a5568" />
+          <Text style={styles.logout}>⚙</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => { setToken(null); setTechnicianName(''); }}>
           <Text style={styles.logout}>Salir</Text>
@@ -103,26 +102,21 @@ export default function App() {
       </View>
 
       <View style={styles.tabBar}>
-        <TabBtn label="Capturar" icon="mic-outline" iconActive="mic" active={activeTab === 'capture'} onPress={() => setActiveTab('capture')} />
-        <TabBtn label="Registros" icon="document-text-outline" iconActive="document-text" active={activeTab === 'observations'} onPress={() => setActiveTab('observations')} badge={savedCount > 0 ? savedCount : undefined} />
-        <TabBtn label="Sincronizar" icon="cloud-outline" iconActive="cloud" active={activeTab === 'sync'} onPress={() => setActiveTab('sync')} />
+        <TabBtn label="Capturar" icon="🎤" active={activeTab === 'capture'} onPress={() => setActiveTab('capture')} />
+        <TabBtn label="Registros" icon="📋" active={activeTab === 'observations'} onPress={() => setActiveTab('observations')} badge={savedCount > 0 ? savedCount : undefined} />
+        <TabBtn label="Sincronizar" icon="☁" active={activeTab === 'sync'} onPress={() => setActiveTab('sync')} />
       </View>
     </SafeAreaView>
   );
 }
 
-function TabBtn({ label, icon, iconActive, active, onPress, badge }: {
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  iconActive: keyof typeof Ionicons.glyphMap;
-  active: boolean;
-  onPress: () => void;
-  badge?: number;
+function TabBtn({ label, icon, active, onPress, badge }: {
+  label: string; icon: string; active: boolean; onPress: () => void; badge?: number;
 }) {
   return (
     <TouchableOpacity style={styles.tab} onPress={onPress}>
       <View>
-        <Ionicons name={active ? iconActive : icon} size={22} color={active ? '#00C4CC' : '#4a5568'} />
+        <Text style={styles.tabIcon}>{icon}</Text>
         {badge != null && (
           <View style={styles.badge}><Text style={styles.badgeText}>{badge}</Text></View>
         )}
@@ -145,6 +139,7 @@ const styles = StyleSheet.create({
   content: { flex: 1 },
   tabBar: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#253060', backgroundColor: '#131929' },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 10, position: 'relative' },
+  tabIcon: { fontSize: 20, textAlign: 'center' },
   tabLabel: { color: '#4a5568', fontSize: 11, marginTop: 3, fontWeight: '600' },
   tabLabelActive: { color: '#00C4CC' },
   tabIndicator: { position: 'absolute', top: 0, left: '20%', right: '20%', height: 2, backgroundColor: '#1F5EAA', borderRadius: 2 },

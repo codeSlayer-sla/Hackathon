@@ -11,7 +11,6 @@
     "postinstall": "node scripts/patch-rn-screens.js"
   },
   "dependencies": {
-    "@expo/vector-icons": "^15.0.3",
     "@qvac/sdk": "^0.19.0",
     "bare-rpc": "^1.3.8",
     "expo": "~54.0.36",
