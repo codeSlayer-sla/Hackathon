@@ -45,6 +45,8 @@ de este monorepo.
 
 ## Shared / Infra
 
+- `3e68ebc` 2026-09-09: README raiz actualizado -- la referencia a `technician-app` seguia describiendo el smoke test original, varios commits despues de haber sido reemplazado por el flujo real
+- `867a6e2` 2026-09-09: `run_tests.py` -- `technician-app` corria `npm test`, que falla ahora mismo (no existe ese script desde que se reemplazo el smoke test); corre `npm run typecheck` en su lugar
 - `30c7a72` 2026-09-08: `apps/technician-app` cableado en `scripts/run_tests.py` + README/CHANGELOG actualizados para reflejar la app movil real (Expo/React Native)
 - `06689b0` 2026-09-08: split de docker-compose en 3 laptops (node-a/b/c) para P2P real, docs/multi-host-demo.md
 - `ab35a24` 2026-09-07: README documenta el reto Philips (Installed Base), componentes, diagrama y puertos actualizados

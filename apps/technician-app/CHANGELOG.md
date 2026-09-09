@@ -7,6 +7,7 @@ arriba.
 
 ## Setup
 
+- `3e68ebc` 2026-09-09: README reescrito de punta a punta -- describia el smoke test original varios commits despues de haber sido reemplazado; ahora documenta el flujo real (multi-sesion, extraccion con json-schema, voz, sync offline, checkpoint de confirmacion, las 3 capas de mitigacion de alucinaciones), y una seccion honesta de "que falta" (foto, tests)
 - `709e3be` 2026-09-09: nuevo estado `review` -- el modelo diciendo `ready_to_save` ya no guarda directo a observations; ahora muestra un resumen y exige "Confirmar y guardar" explicito antes de escribir el registro (quantity/brand/model no tienen un default determinístico como country, asi que el unico control real contra alucinaciones ahi es un humano revisando antes de guardar); tambien renombrado el agente del chat de "AI Mesh" a "Phil"
 - `8c68571` 2026-09-09: sesiones de captura ahora se etiquetan con el nombre del cliente apenas el modelo lo identifica (antes quedaban como "Nueva visita" para siempre) -- con varias sesiones abiertas a la vez, todas iguales eran indistinguibles en la lista
 - `0bdbf2b` 2026-09-09: transcripcion de voz cambiada a `beam_search` (antes `greedy`) -- mejora real de precision de Whisper al mismo tamaño de modelo; WHISPER_TINY es el unico tamaño de Whisper que exporta esta version del SDK como modelo nombrado, no se cambio a uno mas grande sin verificar
