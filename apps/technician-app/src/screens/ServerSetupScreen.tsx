@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { setServerUrl, looksLikeUrl } from '../config/serverConfig';
 import { getOperatingCountry, setOperatingCountry } from '../db/database';
+import CountryPickerModal from './CountryPickerModal';
 
 interface Props {
   initialUrl: string | null;
@@ -15,6 +16,7 @@ interface Props {
 export default function ServerSetupScreen({ initialUrl, onDone, allowSkip }: Props) {
   const [url, setUrl] = useState(initialUrl ?? 'http://');
   const [country, setCountry] = useState('');
+  const [pickerVisible, setPickerVisible] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
   const [error, setError] = useState('');
@@ -82,14 +84,12 @@ export default function ServerSetupScreen({ initialUrl, onDone, allowSkip }: Pro
           <Text style={styles.subtitle}>
             Se usa para todas las visitas que registres -- así la IA nunca tiene que adivinar el país.
           </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Panama"
-            placeholderTextColor="#4a5568"
-            value={country}
-            onChangeText={setCountry}
-            autoCapitalize="words"
-          />
+          <TouchableOpacity style={styles.picker} onPress={() => setPickerVisible(true)}>
+            <Text style={country ? styles.pickerValue : styles.pickerPlaceholder}>
+              {country || 'Selecciona un país'}
+            </Text>
+            <Text style={styles.pickerChevron}>▾</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity style={styles.btn} onPress={handleSave}>
             <Text style={styles.btnText}>Guardar</Text>
@@ -102,6 +102,13 @@ export default function ServerSetupScreen({ initialUrl, onDone, allowSkip }: Pro
           )}
         </View>
       </ScrollView>
+
+      <CountryPickerModal
+        visible={pickerVisible}
+        selected={country || null}
+        onSelect={setCountry}
+        onClose={() => setPickerVisible(false)}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -116,6 +123,10 @@ const styles = StyleSheet.create({
   label: { color: '#e2e8f0', fontSize: 13, fontWeight: '700', marginBottom: 4 },
   subtitle: { color: '#8fa3bf', fontSize: 13, marginBottom: 12, lineHeight: 18 },
   input: { backgroundColor: '#1a2240', borderWidth: 1, borderColor: '#253060', borderRadius: 10, paddingVertical: 14, paddingHorizontal: 16, color: '#e2e8f0', fontSize: 15, marginBottom: 12 },
+  picker: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1a2240', borderWidth: 1, borderColor: '#253060', borderRadius: 10, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12 },
+  pickerValue: { color: '#e2e8f0', fontSize: 15 },
+  pickerPlaceholder: { color: '#4a5568', fontSize: 15 },
+  pickerChevron: { color: '#8fa3bf', fontSize: 14 },
   error: { color: '#fc8181', fontSize: 13, textAlign: 'center', marginBottom: 10 },
   testBtn: { paddingVertical: 10, alignItems: 'center' },
   testBtnText: { color: '#8fa3bf', fontSize: 13, fontWeight: '600' },
