@@ -7,6 +7,7 @@ arriba.
 
 ## Setup
 
+- `709e3be` 2026-09-09: nuevo estado `review` -- el modelo diciendo `ready_to_save` ya no guarda directo a observations; ahora muestra un resumen y exige "Confirmar y guardar" explicito antes de escribir el registro (quantity/brand/model no tienen un default determinístico como country, asi que el unico control real contra alucinaciones ahi es un humano revisando antes de guardar); tambien renombrado el agente del chat de "AI Mesh" a "Phil"
 - `8c68571` 2026-09-09: sesiones de captura ahora se etiquetan con el nombre del cliente apenas el modelo lo identifica (antes quedaban como "Nueva visita" para siempre) -- con varias sesiones abiertas a la vez, todas iguales eran indistinguibles en la lista
 - `0bdbf2b` 2026-09-09: transcripcion de voz cambiada a `beam_search` (antes `greedy`) -- mejora real de precision de Whisper al mismo tamaño de modelo; WHISPER_TINY es el unico tamaño de Whisper que exporta esta version del SDK como modelo nombrado, no se cambio a uno mas grande sin verificar
 - `b288a83` 2026-09-09: pantalla de configuracion gana "pais de operacion" -- se usa siempre en vez del pais que adivine el modelo (eliminaba una alucinacion completa, no solo la mitiga); instrucciones de extraccion ahora prohiben explicitamente inventar country/brand/model o cambiar la modalidad al azar cuando no esta seguro, debe pedir marca/numero de modelo en su lugar
