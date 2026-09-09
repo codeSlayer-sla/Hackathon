@@ -4,6 +4,7 @@ import {
   StyleSheet, ActivityIndicator, Alert,
 } from 'react-native';
 import { Audio } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
 import { ensureLLM, ensureWhisper, runTranscription, getLoadedLLMId } from '../qvac/models';
 import { startConversation } from '../qvac/extraction';
 import {
@@ -15,6 +16,7 @@ import {
   type CaptureSessionStatus,
 } from '../db/database';
 import { beginSessionTurn, runSessionTurn, confirmSession, discardSessionIfDone, type DisplayMessage } from '../capture/sessionRunner';
+import ReviewSummaryCard from './ReviewSummaryCard';
 
 interface Props {
   technicianName: string;
@@ -144,9 +146,13 @@ function SessionListView({
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Visitas</Text>
-        <View style={styles.badge}><Text style={styles.badgeText}>● IA local</Text></View>
+        <View style={styles.badge}>
+          <View style={styles.badgeDot} />
+          <Text style={styles.badgeText}>IA local</Text>
+        </View>
         <TouchableOpacity style={styles.newBtn} onPress={onCreate}>
-          <Text style={styles.newBtnText}>+ Nueva visita</Text>
+          <Ionicons name="add" size={14} color="#fff" />
+          <Text style={styles.newBtnText}>Nueva visita</Text>
         </TouchableOpacity>
       </View>
 
@@ -169,9 +175,15 @@ function SessionListView({
                   <Text style={styles.processingText}>Procesando…</Text>
                 </View>
               ) : item.status === 'review' ? (
-                <Text style={styles.reviewText}>📝 Esperando confirmación</Text>
+                <View style={styles.processingRow}>
+                  <Ionicons name="clipboard-outline" size={13} color="#f59e0b" />
+                  <Text style={styles.reviewText}>Esperando confirmación</Text>
+                </View>
               ) : item.status === 'done' ? (
-                <Text style={styles.doneText}>✅ Listo -- toca para ver</Text>
+                <View style={styles.processingRow}>
+                  <Ionicons name="checkmark-circle" size={13} color="#22c55e" />
+                  <Text style={styles.doneText}>Listo -- toca para ver</Text>
+                </View>
               ) : (
                 <Text style={styles.idleText}>Esperando respuesta del técnico</Text>
               )}
@@ -337,11 +349,12 @@ function CaptureConversation({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backText}>‹ Visitas</Text>
+        <TouchableOpacity style={styles.backBtn} onPress={onBack}>
+          <Ionicons name="chevron-back" size={18} color="#8fa3bf" />
+          <Text style={styles.backText}>Visitas</Text>
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { flex: 1, textAlign: 'center' }]}>Capturar visita</Text>
-        <View style={{ width: 60 }} />
+        <View style={{ width: 80 }} />
       </View>
 
       {!loaded ? (
@@ -349,12 +362,20 @@ function CaptureConversation({
       ) : (
         <>
           <ScrollView ref={scrollRef} style={styles.chat} contentContainerStyle={{ padding: 16, gap: 10 }}>
-            {messages.map((m, i) => (
-              <View key={i} style={[styles.bubble, m.role === 'user' ? styles.bubbleUser : styles.bubbleAgent]}>
-                <Text style={styles.bubbleRole}>{m.role === 'user' ? technicianName : 'Phil'}</Text>
-                <Text style={styles.bubbleText}>{m.text}</Text>
-              </View>
-            ))}
+            {messages.map((m, i) =>
+              m.review ? (
+                <View key={i} style={styles.reviewWrap}>
+                  <Text style={styles.bubbleRole}>Phil</Text>
+                  <Text style={styles.reviewHint}>{m.text}</Text>
+                  <ReviewSummaryCard review={m.review} />
+                </View>
+              ) : (
+                <View key={i} style={[styles.bubble, m.role === 'user' ? styles.bubbleUser : styles.bubbleAgent]}>
+                  <Text style={styles.bubbleRole}>{m.role === 'user' ? technicianName : 'Phil'}</Text>
+                  <Text style={styles.bubbleText}>{m.text}</Text>
+                </View>
+              )
+            )}
             {processing && (
               <View style={styles.bubbleAgent}>
                 <ActivityIndicator color="#00C4CC" size="small" />
@@ -364,7 +385,8 @@ function CaptureConversation({
 
           {done ? (
             <View style={styles.inputRow}>
-              <TouchableOpacity style={[styles.sendBtn, { flex: 1 }]} onPress={onBack}>
+              <TouchableOpacity style={[styles.sendBtn, styles.doneBtn]} onPress={onBack}>
+                <Ionicons name="checkmark-circle" size={18} color="#fff" />
                 <Text style={styles.doneBtnText}>Volver a Visitas</Text>
               </TouchableOpacity>
             </View>
@@ -373,7 +395,8 @@ function CaptureConversation({
               {review && (
                 <View style={styles.confirmRow}>
                   <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
-                    <Text style={styles.confirmBtnText}>✅ Confirmar y guardar</Text>
+                    <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                    <Text style={styles.confirmBtnText}>Confirmar y guardar</Text>
                   </TouchableOpacity>
                   <Text style={styles.confirmHint}>¿Algo mal? Escríbelo abajo en vez de confirmar.</Text>
                 </View>
@@ -395,7 +418,7 @@ function CaptureConversation({
                 >
                   {transcribing
                     ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={styles.micIcon}>{isRecording ? '⏹' : '🎤'}</Text>
+                    : <Ionicons name={isRecording ? 'stop' : 'mic'} size={20} color="#fff" />
                   }
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -403,7 +426,7 @@ function CaptureConversation({
                   onPress={() => sendMessage(input)}
                   disabled={!input.trim() || processing || transcribing}
                 >
-                  <Text style={styles.sendIcon}>➤</Text>
+                  <Ionicons name="send" size={18} color="#fff" />
                 </TouchableOpacity>
               </View>
             </>
@@ -426,10 +449,12 @@ const styles = StyleSheet.create({
   retryText: { color: '#fff', fontWeight: '700' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#253060', gap: 8 },
   headerTitle: { color: '#e2e8f0', fontSize: 16, fontWeight: '700' },
-  backText: { color: '#8fa3bf', fontSize: 14, width: 60 },
-  badge: { backgroundColor: '#0f2318', borderRadius: 20, paddingVertical: 3, paddingHorizontal: 10 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', width: 80 },
+  backText: { color: '#8fa3bf', fontSize: 14 },
+  badge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#0f2318', borderRadius: 20, paddingVertical: 4, paddingHorizontal: 10 },
+  badgeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#22c55e' },
   badgeText: { color: '#86efac', fontSize: 11, fontWeight: '700' },
-  newBtn: { backgroundColor: '#1F5EAA', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12 },
+  newBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#1F5EAA', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12 },
   newBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   empty: { color: '#e2e8f0', fontSize: 16, fontWeight: '600', marginBottom: 8 },
   emptySub: { color: '#8fa3bf', fontSize: 13, textAlign: 'center' },
@@ -446,17 +471,18 @@ const styles = StyleSheet.create({
   bubbleAgent: { backgroundColor: '#131929', borderWidth: 1, borderColor: '#253060', alignSelf: 'flex-start' },
   bubbleRole: { color: '#8fa3bf', fontSize: 11, fontWeight: '700', marginBottom: 4 },
   bubbleText: { color: '#e2e8f0', fontSize: 14, lineHeight: 20 },
+  reviewWrap: { alignSelf: 'stretch' },
+  reviewHint: { color: '#8fa3bf', fontSize: 13, lineHeight: 18, marginBottom: 8 },
   confirmRow: { padding: 12, paddingBottom: 0, gap: 6 },
-  confirmBtn: { backgroundColor: '#15803d', borderRadius: 10, paddingVertical: 14, alignItems: 'center' },
+  confirmBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#15803d', borderRadius: 10, paddingVertical: 14 },
   confirmBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   confirmHint: { color: '#8fa3bf', fontSize: 12, textAlign: 'center' },
   inputRow: { flexDirection: 'row', padding: 12, gap: 8, borderTopWidth: 1, borderTopColor: '#253060' },
   textInput: { flex: 1, backgroundColor: '#131929', borderWidth: 1, borderColor: '#253060', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, color: '#e2e8f0', fontSize: 14, maxHeight: 100 },
   sendBtn: { backgroundColor: '#1F5EAA', borderRadius: 10, width: 44, justifyContent: 'center', alignItems: 'center' },
   sendBtnDisabled: { backgroundColor: '#253060' },
-  sendIcon: { color: '#fff', fontSize: 18 },
+  doneBtn: { flex: 1, flexDirection: 'row', width: undefined, gap: 8 },
   doneBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   micBtn: { backgroundColor: '#253060', borderRadius: 10, width: 44, justifyContent: 'center', alignItems: 'center' },
   micBtnRecording: { backgroundColor: '#c53030' },
-  micIcon: { fontSize: 20 },
 });

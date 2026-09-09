@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { setServerUrl, looksLikeUrl } from '../config/serverConfig';
 import { getOperatingCountry, setOperatingCountry } from '../db/database';
 import CountryPickerModal from './CountryPickerModal';
@@ -77,8 +78,18 @@ export default function ServerSetupScreen({ initialUrl, onDone, allowSkip }: Pro
             }
           </TouchableOpacity>
 
-          {testResult === 'ok' && <Text style={styles.testOk}>✓ Servidor alcanzable</Text>}
-          {testResult === 'fail' && <Text style={styles.testFail}>✗ No se pudo conectar (puedes guardar igual y probar después)</Text>}
+          {testResult === 'ok' && (
+            <View style={styles.testRow}>
+              <Ionicons name="checkmark-circle" size={14} color="#22c55e" />
+              <Text style={styles.testOk}>Servidor alcanzable</Text>
+            </View>
+          )}
+          {testResult === 'fail' && (
+            <View style={styles.testRow}>
+              <Ionicons name="close-circle" size={14} color="#fc8181" />
+              <Text style={styles.testFail}>No se pudo conectar (puedes guardar igual y probar después)</Text>
+            </View>
+          )}
 
           <Text style={[styles.label, { marginTop: 20 }]}>País donde estás operando</Text>
           <Text style={styles.subtitle}>
@@ -88,7 +99,7 @@ export default function ServerSetupScreen({ initialUrl, onDone, allowSkip }: Pro
             <Text style={country ? styles.pickerValue : styles.pickerPlaceholder}>
               {country || 'Selecciona un país'}
             </Text>
-            <Text style={styles.pickerChevron}>▾</Text>
+            <Ionicons name="chevron-down" size={16} color="#8fa3bf" />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.btn} onPress={handleSave}>
@@ -126,12 +137,12 @@ const styles = StyleSheet.create({
   picker: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1a2240', borderWidth: 1, borderColor: '#253060', borderRadius: 10, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12 },
   pickerValue: { color: '#e2e8f0', fontSize: 15 },
   pickerPlaceholder: { color: '#4a5568', fontSize: 15 },
-  pickerChevron: { color: '#8fa3bf', fontSize: 14 },
   error: { color: '#fc8181', fontSize: 13, textAlign: 'center', marginBottom: 10 },
   testBtn: { paddingVertical: 10, alignItems: 'center' },
   testBtnText: { color: '#8fa3bf', fontSize: 13, fontWeight: '600' },
-  testOk: { color: '#22c55e', fontSize: 13, textAlign: 'center', marginBottom: 8 },
-  testFail: { color: '#fc8181', fontSize: 13, textAlign: 'center', marginBottom: 8 },
+  testRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginBottom: 8 },
+  testOk: { color: '#22c55e', fontSize: 13 },
+  testFail: { color: '#fc8181', fontSize: 13 },
   btn: { backgroundColor: '#1F5EAA', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   skipBtn: { paddingVertical: 12, alignItems: 'center', marginTop: 4 },

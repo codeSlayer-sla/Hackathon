@@ -8,9 +8,28 @@ import {
 import { extractFromTranscript, type ExtractionResult } from '../qvac/extraction';
 import type { ConversationTurn } from '../qvac/models';
 
+export interface ReviewEquipmentLine {
+  modality: string;
+  quantity: number | null;
+  brand: string | null;
+  model: string | null;
+  approxAgeYears: number | null;
+}
+
+export interface ReviewSummary {
+  customer: string;
+  location: string;
+  equipment: ReviewEquipmentLine[];
+}
+
 export interface DisplayMessage {
   role: 'user' | 'agent';
   text: string;
+  // Present only on the message that triggered the confirm-before-save
+  // checkpoint -- the chat view renders this as a structured card instead
+  // of plain text, since it's the one screen a technician actually needs
+  // to check field-by-field before data becomes a real record.
+  review?: ReviewSummary;
 }
 
 // What actually gets saved once confirmed -- result plus the country already
@@ -23,19 +42,18 @@ interface PendingResult {
   source: 'text' | 'voice';
 }
 
-function formatReviewSummary(result: ExtractionResult, country: string | null): string {
-  const equipmentLines = result.equipment
-    .map((e) => `• ${e.quantity ?? '?'}x ${e.modality}${e.brand ? ` (${e.brand}${e.model ? ` ${e.model}` : ''})` : ''}${e.approx_age_years ? `, ~${e.approx_age_years} años` : ''}`)
-    .join('\n');
-  const location = [result.city, country].filter(Boolean).join(', ') || 'sin especificar';
-  return (
-    `📝 Listo para guardar -- revisa antes de confirmar:\n\n` +
-    `Cliente: ${result.customer}\n` +
-    `Ubicación: ${location}\n` +
-    `Equipos:\n${equipmentLines}\n\n` +
-    `Si algo está mal, escríbelo (ej. "en realidad son 3 equipos" o "el modelo es X"). ` +
-    `Si está correcto, toca "Confirmar y guardar".`
-  );
+function buildReviewSummary(result: ExtractionResult, country: string | null): ReviewSummary {
+  return {
+    customer: result.customer ?? '',
+    location: [result.city, country].filter(Boolean).join(', ') || 'Sin especificar',
+    equipment: result.equipment.map((e) => ({
+      modality: e.modality,
+      quantity: e.quantity,
+      brand: e.brand,
+      model: e.model,
+      approxAgeYears: e.approx_age_years,
+    })),
+  };
 }
 
 /**
@@ -109,7 +127,11 @@ export async function runSessionTurn(
       // explicit human confirm instead of saving straight to observations;
       // a correction typed here just becomes the next normal turn.
       const pending: PendingResult = { result, country, source };
-      messages.push({ role: 'agent', text: formatReviewSummary(result, country) });
+      messages.push({
+        role: 'agent',
+        text: 'Revisa los datos antes de confirmar. Si algo está mal, escríbelo (ej. "en realidad son 3 equipos"); si está correcto, toca "Confirmar y guardar".',
+        review: buildReviewSummary(result, country),
+      });
       await updateCaptureSession(sessionId, {
         historyJson: JSON.stringify(updatedHistory),
         messagesJson: JSON.stringify(messages),
@@ -159,7 +181,7 @@ export async function confirmSession(sessionId: number, technicianName: string):
     .join(', ');
   messages.push({
     role: 'agent',
-    text: `✅ Guardado para ${result.customer}: ${summary}. Datos listos para sincronizar con el servidor Philips.`,
+    text: `Guardado para ${result.customer}: ${summary}. Datos listos para sincronizar con el servidor Philips.`,
   });
   // Kept as "done" (not deleted) so whoever is actively watching this
   // session sees the confirmation -- the chat view deletes it when the
