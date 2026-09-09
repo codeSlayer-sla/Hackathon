@@ -4,8 +4,8 @@ import {
   StyleSheet, ActivityIndicator, Alert,
 } from 'react-native';
 import { Audio } from 'expo-av';
-import { ensureLLM, ensureWhisper, runTranscription } from '../qvac/models';
-import { extractFromTranscript, type ExtractionResult } from '../qvac/extraction';
+import { ensureLLM, ensureWhisper, runTranscription, type ConversationTurn } from '../qvac/models';
+import { extractFromTranscript, startConversation, type ExtractionResult } from '../qvac/extraction';
 import { insertObservations } from '../db/database';
 
 interface Message { role: 'user' | 'agent'; text: string; }
@@ -22,7 +22,7 @@ export default function CaptureScreen({ technicianName, onSaved }: Props) {
   const [loadProgress, setLoadProgress] = useState(0);
   const [llmId, setLlmId] = useState<string | null>(null);
   const [whisperId, setWhisperId] = useState<string | null>(null);
-  const [transcript, setTranscript] = useState<string[]>([]);
+  const [history, setHistory] = useState<ConversationTurn[]>(startConversation());
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -50,13 +50,13 @@ export default function CaptureScreen({ technicianName, onSaved }: Props) {
   async function sendMessage(text: string, source: 'text' | 'voice' = 'text') {
     if (!llmId || !text.trim()) return;
     setProcessing(true);
-    const newTranscript = [...transcript, text.trim()];
-    setTranscript(newTranscript);
     setMessages((prev) => [...prev, { role: 'user', text: text.trim() }]);
     setInput('');
 
     try {
-      const result: ExtractionResult = await extractFromTranscript(llmId, newTranscript);
+      const { result, history: updatedHistory }: { result: ExtractionResult; history: ConversationTurn[] } =
+        await extractFromTranscript(llmId, history, text.trim());
+      setHistory(updatedHistory);
 
       if (result.ready_to_save && result.customer && result.equipment.length > 0) {
         const saved = await insertObservations(
@@ -72,7 +72,7 @@ export default function CaptureScreen({ technicianName, onSaved }: Props) {
           role: 'agent',
           text: `✅ Guardado para ${result.customer}: ${summary}. Datos listos para sincronizar con el servidor Philips.`,
         }]);
-        setTranscript([]);
+        setHistory(startConversation());
         onSaved();
       } else {
         const follow = result.follow_up_question ?? '¿Puedes darme más detalles?';
@@ -87,7 +87,7 @@ export default function CaptureScreen({ technicianName, onSaved }: Props) {
   }
 
   function resetSession() {
-    setTranscript([]);
+    setHistory(startConversation());
     setMessages([{ role: 'agent', text: 'Sesión reiniciada. Describe tu próxima visita.' }]);
   }
 

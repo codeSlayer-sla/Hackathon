@@ -1,6 +1,6 @@
-import { runCompletion } from './models';
+import { runCompletion, type ConversationTurn } from './models';
 
-const INSTRUCTIONS = `Extraes datos estructurados de observaciones de equipos médicos de visitas a hospitales.
+const SYSTEM_INSTRUCTIONS = `Extraes datos estructurados de observaciones de equipos médicos de visitas a hospitales.
 
 Extrae cuando esté disponible:
 - customer: nombre del hospital/clínica
@@ -11,12 +11,14 @@ Extrae cuando esté disponible:
 - follow_up_question: pregunta corta sobre el dato más importante que falta, o null si todo está completo
 - ready_to_save: true solo si missing_required está vacío
 
+Vas a recibir la conversación turno por turno. En cada turno tu JSON debe
+acumular TODO lo que se sabe hasta ahora, no solo el último mensaje del
+usuario -- si ya habías extraído un dato en un turno anterior y el usuario
+no lo contradice, mantenlo.
+
 Ejemplo:
 Input: "Estuve en Hospital La Paz en Madrid, tienen 2 resonadores Philips Ingenia de unos 8 años"
-JSON: {"customer":"Hospital La Paz","city":"Madrid","country":"Spain","equipment":[{"modality":"MR","quantity":2,"brand":"Philips","model":"Ingenia","approx_age_years":8,"confidence":"high","status":"reported"}],"missing_required":[],"follow_up_question":null,"ready_to_save":true}
-
-Conversación (más reciente al final):
-`;
+JSON: {"customer":"Hospital La Paz","city":"Madrid","country":"Spain","equipment":[{"modality":"MR","quantity":2,"brand":"Philips","model":"Ingenia","approx_age_years":8,"confidence":"high","status":"reported"}],"missing_required":[],"follow_up_question":null,"ready_to_save":true}`;
 
 // Applied as a GBNF grammar constraint on the model's own output (llama.cpp,
 // via QVAC's `responseFormat: json_schema`) -- the model literally cannot
@@ -108,15 +110,29 @@ function parseJSON(raw: string): ExtractionResult {
   }
 }
 
+export function startConversation(): ConversationTurn[] {
+  return [{ role: 'system', content: SYSTEM_INSTRUCTIONS }];
+}
+
+/**
+ * Extends `history` with the user's new message, runs the extraction, and
+ * returns the updated history (including the model's reply) alongside the
+ * parsed result. Callers must persist and pass back the returned history on
+ * the next call -- with kvCache on, re-sending the same prefix verbatim is
+ * what lets QVAC skip reprocessing everything except the new message,
+ * instead of re-running the whole conversation from scratch every turn.
+ */
 export async function extractFromTranscript(
   modelId: string,
-  transcript: string[]
-): Promise<ExtractionResult> {
-  const convo = transcript.map((t) => `Usuario: ${t}`).join('\n');
-  const prompt = `${INSTRUCTIONS}${convo}\nJSON:`;
-  const answer = await runCompletion(modelId, prompt, {
+  history: ConversationTurn[],
+  userText: string
+): Promise<{ result: ExtractionResult; history: ConversationTurn[] }> {
+  const withUser: ConversationTurn[] = [...history, { role: 'user', content: userText }];
+  const outcome = await runCompletion(modelId, withUser, {
     type: 'json_schema',
     json_schema: { name: 'extraction', schema: EXTRACTION_SCHEMA },
   });
-  return parseJSON(answer);
+  const result = parseJSON(outcome.text);
+  const assistantContent = outcome.cacheableAssistantContent ?? outcome.text;
+  return { result, history: [...withUser, { role: 'assistant', content: assistantContent }] };
 }

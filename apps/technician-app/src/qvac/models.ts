@@ -54,19 +54,36 @@ export async function ensureWhisper(onProgress?: ProgressCallback): Promise<stri
   return whisperModelId;
 }
 
+export interface ConversationTurn {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface CompletionOutcome {
+  text: string;
+  // Canonical assistant text to push back into `history` for the next turn
+  // when kvCache is on -- re-using it verbatim guarantees a cache hit, so
+  // only the new message gets reprocessed instead of the whole conversation.
+  cacheableAssistantContent?: string;
+}
+
 export async function runCompletion(
   modelId: string,
-  prompt: string,
+  history: ConversationTurn[],
   responseFormat?: Parameters<typeof completion>[0]['responseFormat']
-): Promise<string> {
+): Promise<CompletionOutcome> {
   const run = completion({
     modelId,
-    history: [{ role: 'user', content: prompt }],
+    history,
     stream: false,
     responseFormat,
+    kvCache: true,
   });
   const final = await run.final;
-  return final.contentText ?? '';
+  return {
+    text: final.contentText ?? '',
+    cacheableAssistantContent: final.cacheableAssistantContent,
+  };
 }
 
 export async function runTranscription(modelId: string, audioPath: string): Promise<string> {
