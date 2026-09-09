@@ -23,10 +23,6 @@ export default function App() {
   const [savedCount, setSavedCount] = useState(0);
 
   useEffect(() => {
-    // Kicked off immediately, before login even resolves -- the technician
-    // never needs to watch this if it finishes during login/PIN entry. It
-    // doesn't need the database or a server, so there's no reason to wait.
-    preloadLLM();
     initDatabase().then(async () => {
       setDbReady(true);
       const url = await getServerUrl();
@@ -34,6 +30,14 @@ export default function App() {
       if (!url) setShowServerSetup(true);
     });
   }, []);
+
+  useEffect(() => {
+    // Temporarily moved from boot to after login, to isolate whether the
+    // app closing before the login screen even renders is caused by
+    // preloading this early. If it still crashes here, the preload timing
+    // wasn't the cause; if it stops crashing, it was.
+    if (token) preloadLLM();
+  }, [token]);
 
   if (!dbReady) {
     return (
