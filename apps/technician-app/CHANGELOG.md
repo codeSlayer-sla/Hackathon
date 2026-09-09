@@ -7,6 +7,9 @@ arriba.
 
 ## Setup
 
+- `8c3ff5f` 2026-09-09: extraccion ahora usa `responseFormat: json_schema` (grammar constraint de llama.cpp) en vez de confiar solo en la instruccion del prompt -- el modelo de 1B ignoraba "responde solo JSON" seguido y quedaba pegado en el fallback "no pude entender el mensaje"
+- `47af816` 2026-09-09: fix de transcripcion de voz -- se le pasaba la URI `file://` de expo-av tal cual al worker nativo de QVAC, que espera una ruta de filesystem plana (mismo `.replace('file://', '')` que el propio SDK hace con sus rutas)
+- `61545fb` 2026-09-09: fix de crash al abrir Registros/Sincronizar -- ambas pantallas usaban `useFocusEffect` de `@react-navigation/native` sin que la app tuviera un `NavigationContainer` (los tabs se manejan con estado plano en App.tsx); reemplazado por `useEffect` normal, misma conducta ya que cada tab se desmonta/remonta al cambiar
 - `ef993f7` 2026-09-09: fallback de PINs hardcodeados reintroducido, pero solo como ultimo recurso -- se usa unicamente si nunca hubo un roster cacheado (0 conexiones previas al servidor), jamas si ya hay datos sincronizados; login queda etiquetado "(offline-fallback)" para distinguirlo
 - `4368696` 2026-09-09: direccion del servidor configurable dentro de la app (primer uso + boton de engranaje despues) en vez de fija en el build via `EXPO_PUBLIC_PHILIPS_SERVER` -- cambiar de red ya no requiere rehacer el build de EAS
 - `bd2deec` 2026-09-09: login offline ahora contra una cache local de hashes de PIN (`technicians_cache`, sincronizada via `GET /auth/roster` en cada login online exitoso o cuando `SyncScreen` detecta conexion) en vez de una lista de PINs hardcodeada -- mismo hash sha256+pepper que usa el servidor
