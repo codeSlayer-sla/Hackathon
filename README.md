@@ -259,12 +259,16 @@ python scripts/run_tests.py --list             # ver nombres disponibles
 
 Módulos: `shared`, `rag`, `router`, `peer`, `installed-base`, `frontend`,
 `technician-app`. Los tests corren contra peers **mockeados** a propósito
-(mismo patrón en todos los módulos, incluyendo el SDK nativo de QVAC en
-`technician-app`) para no depender de descargar modelos, tener Docker/red
-disponible, ni un teléfono físico conectado — la inferencia real se prueba
-levantando el mesh de verdad (`docker compose up`) y probando con los
-ejemplos de arriba, o corriendo `technician-app` en un dispositivo (ver
-`apps/technician-app/README.md`).
+(mismo patrón en todos los módulos) para no depender de descargar modelos,
+tener Docker/red disponible, ni un teléfono físico conectado — la
+inferencia real se prueba levantando el mesh de verdad (`docker compose
+up`) y probando con los ejemplos de arriba, o corriendo `technician-app` en
+un dispositivo (ver `apps/technician-app/README.md`).
+
+`technician-app` es la excepción: no tiene suite de tests en este momento
+(se perdió al reemplazar su UI de smoke-test por el flujo real de captura,
+ver su CHANGELOG.md), así que su entrada en `run_tests.py` corre
+`typecheck` en su lugar -- verifica tipos, no comportamiento.
 
 ## Arquitectura a la que apunta el proyecto completo
 
@@ -296,9 +300,11 @@ sincroniza contra estos mismos endpoints cuando recupera conexión. Por eso
 `CaptureTurnRequest` y `/photos/{id}/validate` ya aceptan un
 `client_event_id`: si la app reintenta un envío que ya se procesó, el
 servidor devuelve la respuesta cacheada en vez de duplicar la observación.
-Ver `apps/technician-app/README.md` para el estado actual (hoy: smoke test
-del ciclo de vida de QVAC, falta el flujo de captura real + la cola
-offline).
+Ver `apps/technician-app/README.md` para el estado actual: ya es el flujo
+real (login por PIN, captura conversacional multi-sesión con extracción
+on-device, voz, cola SQLite offline, confirmación humana antes de guardar,
+y sync contra estos mismos endpoints) -- falta captura por foto en la app
+(el backend ya la soporta) y una suite de tests automatizados.
 
 **¿Se puede correr esto en un VPS cloud?** Sí — el único requisito es que
 la inferencia corra on-device o delegada P2P *entre nodos QVAC*, nunca a
