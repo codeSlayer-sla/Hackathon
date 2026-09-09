@@ -4,7 +4,7 @@ import {
   StyleSheet, ActivityIndicator, Alert,
 } from 'react-native';
 import { Audio } from 'expo-av';
-import { ensureLLM, ensureWhisper, runTranscription } from '../qvac/models';
+import { ensureLLM, ensureWhisper, runTranscription, getLoadedLLMId } from '../qvac/models';
 import { startConversation } from '../qvac/extraction';
 import {
   createCaptureSession,
@@ -29,15 +29,20 @@ const GREETING: DisplayMessage = {
 };
 
 export default function CaptureScreen({ technicianName, onSaved }: Props) {
-  const [modelState, setModelState] = useState<ModelState>('idle');
+  // Preloaded from App.tsx on boot -- if it already finished (the common
+  // case, since it had the whole login screen as a head start), skip
+  // straight to 'ready' instead of flashing a loading screen for a model
+  // that's already sitting there loaded.
+  const [modelState, setModelState] = useState<ModelState>(() => (getLoadedLLMId() ? 'ready' : 'idle'));
   const [loadProgress, setLoadProgress] = useState(0);
-  const [llmId, setLlmId] = useState<string | null>(null);
+  const [llmId, setLlmId] = useState<string | null>(() => getLoadedLLMId());
   const [sessions, setSessions] = useState<CaptureSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
 
   useEffect(() => {
-    loadModels();
+    if (modelState !== 'ready') loadModels();
     refreshSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadModels() {

@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
 import { initDatabase } from './src/db/database';
 import { getServerUrl } from './src/config/serverConfig';
+import { preloadLLM } from './src/qvac/models';
 import LoginScreen from './src/screens/LoginScreen';
 import ServerSetupScreen from './src/screens/ServerSetupScreen';
 import CaptureScreen from './src/screens/CaptureScreen';
@@ -21,6 +22,10 @@ export default function App() {
   const [savedCount, setSavedCount] = useState(0);
 
   useEffect(() => {
+    // Kicked off immediately, before login even resolves -- the technician
+    // never needs to watch this if it finishes during login/PIN entry. It
+    // doesn't need the database or a server, so there's no reason to wait.
+    preloadLLM();
     initDatabase().then(async () => {
       setDbReady(true);
       const url = await getServerUrl();

@@ -12,23 +12,66 @@ type ProgressCallback = (pct: number, mbDl: number, mbTotal: number) => void;
 let llmModelId: string | null = null;
 let whisperModelId: string | null = null;
 
-export async function ensureLLM(onProgress?: ProgressCallback): Promise<string> {
-  if (llmModelId) return llmModelId;
-  llmModelId = await loadModel({
-    modelSrc: LLAMA_3_2_1B_INST_Q4_0,
-    // Forced to CPU: QVAC's own docs list Android as having no physical-device
-    // GPU acceptance yet, and this app hit a native crash right as the model
-    // finished loading (the moment GPU buffer allocation would kick in).
-    // `predict` hard-caps generated tokens per response -- without it a small
-    // model that falls into a repetition loop (a real, known failure mode)
-    // never naturally emits EOS and generation runs indefinitely, which looks
-    // exactly like the app "never answering."
-    modelConfig: { device: 'cpu', ctx_size: 2048, predict: 512 },
-    onProgress: (p) => {
-      onProgress?.(p.percentage, p.downloaded / 1e6, p.total / 1e6);
-    },
-  });
+// Module-level, so it survives across CaptureScreen mounts/unmounts within
+// the same running app (tab switches never re-load it). What DOES force a
+// real reload is the app's whole JS process dying -- e.g. Android's
+// low-memory killer, and this app is a natural target for that since it
+// holds a large model in RAM. That reload time is unavoidable (RAM is
+// always empty on a fresh process); what's avoidable is making the
+// technician sit and watch it, hence preloadLLM below.
+let llmLoadPromise: Promise<string> | null = null;
+const llmProgressListeners = new Set<ProgressCallback>();
+
+function notifyLLMProgress(pct: number, mbDl: number, mbTotal: number): void {
+  for (const cb of llmProgressListeners) cb(pct, mbDl, mbTotal);
+}
+
+/**
+ * Kicks off the LLM load without waiting for it or requiring a progress
+ * listener -- meant to be called once, as early as possible (app boot,
+ * before login even resolves), so that by the time the technician actually
+ * opens a capture session the model is already loaded or close to it.
+ * Safe to call multiple times; only the first call actually starts a load.
+ */
+export function preloadLLM(): void {
+  void ensureLLM();
+}
+
+/** Synchronous check so a screen can skip ever rendering a loading state
+ * when the model is already loaded, instead of always awaiting ensureLLM
+ * and flashing a loading screen for one render even when it's instant. */
+export function getLoadedLLMId(): string | null {
   return llmModelId;
+}
+
+export function ensureLLM(onProgress?: ProgressCallback): Promise<string> {
+  if (llmModelId) return Promise.resolve(llmModelId);
+  if (onProgress) llmProgressListeners.add(onProgress);
+  if (!llmLoadPromise) {
+    llmLoadPromise = loadModel({
+      modelSrc: LLAMA_3_2_1B_INST_Q4_0,
+      // Forced to CPU: QVAC's own docs list Android as having no physical-device
+      // GPU acceptance yet, and this app hit a native crash right as the model
+      // finished loading (the moment GPU buffer allocation would kick in).
+      // `predict` hard-caps generated tokens per response -- without it a small
+      // model that falls into a repetition loop (a real, known failure mode)
+      // never naturally emits EOS and generation runs indefinitely, which looks
+      // exactly like the app "never answering."
+      modelConfig: { device: 'cpu', ctx_size: 2048, predict: 512 },
+      onProgress: (p) => notifyLLMProgress(p.percentage, p.downloaded / 1e6, p.total / 1e6),
+    })
+      .then((id) => {
+        llmModelId = id;
+        llmProgressListeners.clear();
+        return id;
+      })
+      .catch((e) => {
+        llmLoadPromise = null; // allow retrying instead of caching the failure forever
+        llmProgressListeners.clear();
+        throw e;
+      });
+  }
+  return llmLoadPromise;
 }
 
 export async function ensureWhisper(onProgress?: ProgressCallback): Promise<string> {
