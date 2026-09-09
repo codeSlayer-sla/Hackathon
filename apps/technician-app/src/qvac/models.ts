@@ -37,7 +37,14 @@ export async function ensureWhisper(onProgress?: ProgressCallback): Promise<stri
     modelSrc: WHISPER_TINY,
     modelConfig: {
       audio_format: 'f32le',
-      strategy: 'greedy',
+      // Beam search over greedy: real accuracy gain for Whisper at the same
+      // model size, and unlike the LLM chat this is a one-shot transcription
+      // per voice note, not a repeated multi-turn cost, so the extra latency
+      // is a fine trade. WHISPER_TINY is the only Whisper size this SDK
+      // version exports as a named model -- not swapping to a bigger one
+      // blind since no other size is verifiable without a live registry query.
+      strategy: 'beam_search',
+      beam_search_beam_size: 5,
       n_threads: 4,
       language: 'es',
       no_timestamps: true,
