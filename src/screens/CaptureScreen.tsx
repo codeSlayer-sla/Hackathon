@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, ActivityIndicator, Alert,
 } from 'react-native';
+import { Audio } from 'expo-av';
 import { ensureLLM, ensureWhisper, runTranscription } from '../qvac/models';
 import { extractFromTranscript, type ExtractionResult } from '../qvac/extraction';
 import { insertObservations } from '../db/database';
@@ -20,10 +21,14 @@ export default function CaptureScreen({ technicianName, onSaved }: Props) {
   const [modelState, setModelState] = useState<ModelState>('idle');
   const [loadProgress, setLoadProgress] = useState(0);
   const [llmId, setLlmId] = useState<string | null>(null);
+  const [whisperId, setWhisperId] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [recordingObj, setRecordingObj] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -86,6 +91,50 @@ export default function CaptureScreen({ technicianName, onSaved }: Props) {
     setMessages([{ role: 'agent', text: 'Sesión reiniciada. Describe tu próxima visita.' }]);
   }
 
+  async function startRecording() {
+    try {
+      const { granted } = await Audio.requestPermissionsAsync();
+      if (!granted) {
+        Alert.alert('Permiso denegado', 'Se necesita permiso de micrófono para grabar.');
+        return;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const rec = new Audio.Recording();
+      await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await rec.startAsync();
+      setRecordingObj(rec);
+      setIsRecording(true);
+    } catch (e: any) {
+      Alert.alert('Error', 'No se pudo iniciar la grabación: ' + e.message);
+    }
+  }
+
+  async function stopRecording() {
+    if (!recordingObj) return;
+    setIsRecording(false);
+    setTranscribing(true);
+    try {
+      await recordingObj.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      const uri = recordingObj.getURI();
+      setRecordingObj(null);
+      if (!uri) throw new Error('No se obtuvo URI de audio');
+      let wId = whisperId;
+      if (!wId) {
+        wId = await ensureWhisper();
+        setWhisperId(wId);
+      }
+      const text = await runTranscription(wId, uri);
+      if (text.trim()) {
+        await sendMessage(text, 'voice');
+      }
+    } catch (e: any) {
+      Alert.alert('Error de transcripción', e.message);
+    } finally {
+      setTranscribing(false);
+    }
+  }
+
   if (modelState === 'loading-llm') {
     return (
       <View style={styles.center}>
@@ -142,12 +191,22 @@ export default function CaptureScreen({ technicianName, onSaved }: Props) {
           value={input}
           onChangeText={setInput}
           multiline
-          editable={!processing && modelState === 'ready'}
+          editable={!processing && !transcribing && modelState === 'ready'}
         />
         <TouchableOpacity
-          style={[styles.sendBtn, (!input.trim() || processing) && styles.sendBtnDisabled]}
+          style={[styles.micBtn, isRecording && styles.micBtnRecording]}
+          onPress={isRecording ? stopRecording : startRecording}
+          disabled={processing || transcribing || modelState !== 'ready'}
+        >
+          {transcribing
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Text style={styles.micIcon}>{isRecording ? '⏹' : '🎤'}</Text>
+          }
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.sendBtn, (!input.trim() || processing || transcribing) && styles.sendBtnDisabled]}
           onPress={() => sendMessage(input)}
-          disabled={!input.trim() || processing}
+          disabled={!input.trim() || processing || transcribing}
         >
           <Text style={styles.sendIcon}>➤</Text>
         </TouchableOpacity>
@@ -182,4 +241,7 @@ const styles = StyleSheet.create({
   sendBtn: { backgroundColor: '#1F5EAA', borderRadius: 10, width: 44, justifyContent: 'center', alignItems: 'center' },
   sendBtnDisabled: { backgroundColor: '#253060' },
   sendIcon: { color: '#fff', fontSize: 18 },
+  micBtn: { backgroundColor: '#253060', borderRadius: 10, width: 44, justifyContent: 'center', alignItems: 'center' },
+  micBtnRecording: { backgroundColor: '#c53030' },
+  micIcon: { fontSize: 20 },
 });
