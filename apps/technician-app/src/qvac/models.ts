@@ -57,7 +57,18 @@ export function ensureLLM(onProgress?: ProgressCallback): Promise<string> {
       // model that falls into a repetition loop (a real, known failure mode)
       // never naturally emits EOS and generation runs indefinitely, which looks
       // exactly like the app "never answering."
-      modelConfig: { device: 'cpu', ctx_size: 2048, predict: 512 },
+      // `cache-type-k/v: q8_0` halves the KV cache's memory footprint (f16 ->
+      // q8_0), a standard llama.cpp lever for CPU inference -- less memory
+      // bandwidth per token, no change to model weights/quality. Quantizing
+      // the value cache needs flash attention, which QVAC's addon already
+      // defaults to "on" for this model type, so no extra config needed there.
+      modelConfig: {
+        device: 'cpu',
+        ctx_size: 2048,
+        predict: 512,
+        'cache-type-k': 'q8_0',
+        'cache-type-v': 'q8_0',
+      },
       onProgress: (p) => notifyLLMProgress(p.percentage, p.downloaded / 1e6, p.total / 1e6),
     })
       .then((id) => {
