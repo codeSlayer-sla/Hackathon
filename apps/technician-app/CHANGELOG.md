@@ -7,6 +7,7 @@ arriba.
 
 ## Setup
 
+- `ef993f7` 2026-09-09: fallback de PINs hardcodeados reintroducido, pero solo como ultimo recurso -- se usa unicamente si nunca hubo un roster cacheado (0 conexiones previas al servidor), jamas si ya hay datos sincronizados; login queda etiquetado "(offline-fallback)" para distinguirlo
 - `4368696` 2026-09-09: direccion del servidor configurable dentro de la app (primer uso + boton de engranaje despues) en vez de fija en el build via `EXPO_PUBLIC_PHILIPS_SERVER` -- cambiar de red ya no requiere rehacer el build de EAS
 - `bd2deec` 2026-09-09: login offline ahora contra una cache local de hashes de PIN (`technicians_cache`, sincronizada via `GET /auth/roster` en cada login online exitoso o cuando `SyncScreen` detecta conexion) en vez de una lista de PINs hardcodeada -- mismo hash sha256+pepper que usa el servidor
 - `3cb0645` 2026-09-09: reemplazado el smoke test por el flujo real (login PIN con fallback offline, captura conversacional con extraccion on-device, cola SQLite local, pantalla de registros, sync al backend); nueva estrategia de bundling QVAC para EAS -- worker bundle pre-generado y commiteado (`qvac/`) copiado en prebuild via `app.plugin.js`, en vez de invocar bare-pack en el build de la nube; LLM forzado a `device: "cpu"` (crash nativo justo al terminar de cargar en un dispositivo real -- Android no tiene aun soporte de GPU confirmado por QVAC); pendiente: se perdio la suite Jest/RNTL del smoke test, hay que reconstruirla para el flujo nuevo
