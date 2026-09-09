@@ -3,20 +3,13 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import * as Crypto from 'expo-crypto';
+import { findCachedTechnicianByPinHash, getCachedPepper } from '../db/database';
+import { PHILIPS_SERVER, refreshRoster } from '../sync/syncService';
 
 interface Props {
   onLogin: (token: string, name: string) => void;
 }
-
-// PINs demo: 1234 / 2345 / 3456
-// When online: calls Philips server. Offline: accepts demo PINs locally.
-const OFFLINE_PINS: Record<string, string> = {
-  '1234': 'Field User 01',
-  '2345': 'Sales User 02',
-  '3456': 'Field User 03',
-};
-
-const PHILIPS_SERVER = process.env.EXPO_PUBLIC_PHILIPS_SERVER ?? 'http://192.168.1.100:8005';
 
 export default function LoginScreen({ onLogin }: Props) {
   const [pin, setPin] = useState('');
@@ -38,6 +31,9 @@ export default function LoginScreen({ onLogin }: Props) {
       });
       if (resp.ok) {
         const data = await resp.json();
+        // Best-effort: refresh the offline login cache now that we have a
+        // valid token, so a later offline login has fresh PIN hashes.
+        refreshRoster(data.token);
         onLogin(data.token, data.name);
         return;
       }
@@ -46,10 +42,20 @@ export default function LoginScreen({ onLogin }: Props) {
       // server unreachable — fall through to offline mode
     }
 
-    // Offline fallback
-    const name = OFFLINE_PINS[pin];
-    if (name) {
-      onLogin(`offline-${pin}-${Date.now()}`, `${name} (offline)`);
+    // Offline fallback: hash the entered PIN with the last-cached pepper and
+    // compare against the last-cached roster (populated on a previous online
+    // login). No hardcoded PINs -- if nothing was ever cached, offline login
+    // simply isn't possible yet.
+    const pepper = await getCachedPepper();
+    if (!pepper) {
+      setError('Sin conexión al servidor y sin datos guardados para modo offline. Inicia sesión online al menos una vez.');
+      setLoading(false);
+      return;
+    }
+    const pinHash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `${pin}${pepper}`);
+    const technician = await findCachedTechnicianByPinHash(pinHash);
+    if (technician) {
+      onLogin(`offline-${technician.technician_id}-${Date.now()}`, `${technician.name} (offline)`);
     } else {
       setError('PIN incorrecto (sin conexión al servidor)');
     }

@@ -48,6 +48,18 @@ export async function initDatabase(): Promise<void> {
       sync_status TEXT NOT NULL DEFAULT 'pending',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS technicians_cache (
+      technician_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      pin_hash TEXT NOT NULL,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
 }
 
@@ -126,4 +138,42 @@ export async function countPending(): Promise<number> {
     "SELECT COUNT(*) as n FROM observations WHERE sync_status = 'pending'"
   );
   return row?.n ?? 0;
+}
+
+export interface CachedTechnician {
+  technician_id: string;
+  name: string;
+  pin_hash: string;
+}
+
+export async function cacheRoster(pepper: string, technicians: CachedTechnician[]): Promise<void> {
+  await db().withTransactionAsync(async () => {
+    await db().runAsync(
+      "INSERT INTO app_settings (key, value) VALUES ('auth_pepper', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      [pepper]
+    );
+    await db().runAsync('DELETE FROM technicians_cache');
+    for (const t of technicians) {
+      await db().runAsync(
+        'INSERT INTO technicians_cache (technician_id, name, pin_hash) VALUES (?, ?, ?)',
+        [t.technician_id, t.name, t.pin_hash]
+      );
+    }
+  });
+}
+
+export async function getCachedPepper(): Promise<string | null> {
+  const row = await db().getFirstAsync<{ value: string }>(
+    "SELECT value FROM app_settings WHERE key = 'auth_pepper'"
+  );
+  return row?.value ?? null;
+}
+
+export async function findCachedTechnicianByPinHash(
+  pinHash: string
+): Promise<{ technician_id: string; name: string } | null> {
+  return db().getFirstAsync<{ technician_id: string; name: string }>(
+    'SELECT technician_id, name FROM technicians_cache WHERE pin_hash = ?',
+    [pinHash]
+  );
 }

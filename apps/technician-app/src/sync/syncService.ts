@@ -1,7 +1,29 @@
-import { listPendingSync, markSynced, markSyncFailed } from '../db/database';
+import { cacheRoster, listPendingSync, markSynced, markSyncFailed } from '../db/database';
 
 // Change this to your Philips on-premise server URL
-const PHILIPS_SERVER = process.env.EXPO_PUBLIC_PHILIPS_SERVER ?? 'http://192.168.1.100:8005';
+export const PHILIPS_SERVER = process.env.EXPO_PUBLIC_PHILIPS_SERVER ?? 'http://192.168.1.100:8005';
+
+/**
+ * Refreshes the local PIN-hash + pepper cache used for offline login.
+ * Best-effort: called right after a successful online login and whenever
+ * SyncScreen finds the server reachable. Never blocks the caller on
+ * failure -- an offline login simply falls back to whatever was cached
+ * last, or fails if nothing was ever cached.
+ */
+export async function refreshRoster(token: string): Promise<boolean> {
+  try {
+    const resp = await fetch(`${PHILIPS_SERVER}/auth/roster`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!resp.ok) return false;
+    const body = await resp.json();
+    await cacheRoster(body.pepper, body.technicians);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export interface SyncResult {
   pushed: number;
