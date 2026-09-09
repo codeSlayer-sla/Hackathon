@@ -6,20 +6,20 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "node": "22.11.0",
+      "node": "24.0.0",
       "android": {
         "buildType": "apk"
       }
     },
     "preview": {
       "distribution": "internal",
-      "node": "22.11.0",
+      "node": "24.0.0",
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
-      "node": "22.11.0",
+      "node": "24.0.0",
       "android": {
         "buildType": "app-bundle"
       }
