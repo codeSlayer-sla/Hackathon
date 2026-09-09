@@ -5,13 +5,15 @@ import {
 } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { findCachedTechnicianByPinHash, getCachedPepper } from '../db/database';
-import { PHILIPS_SERVER, refreshRoster } from '../sync/syncService';
+import { refreshRoster } from '../sync/syncService';
+import { getServerUrl } from '../config/serverConfig';
 
 interface Props {
   onLogin: (token: string, name: string) => void;
+  onEditServer: () => void;
 }
 
-export default function LoginScreen({ onLogin }: Props) {
+export default function LoginScreen({ onLogin, onEditServer }: Props) {
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -22,8 +24,10 @@ export default function LoginScreen({ onLogin }: Props) {
     setError('');
 
     // Try server first
+    const server = await getServerUrl();
     try {
-      const resp = await fetch(`${PHILIPS_SERVER}/auth/technician`, {
+      if (!server) throw new Error('no server configured');
+      const resp = await fetch(`${server}/auth/technician`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin }),
@@ -93,6 +97,10 @@ export default function LoginScreen({ onLogin }: Props) {
         </TouchableOpacity>
 
         <Text style={styles.hint}>Demo: 1234 · 2345 · 3456</Text>
+
+        <TouchableOpacity onPress={onEditServer} style={styles.serverLink}>
+          <Text style={styles.serverLinkText}>⚙ Configurar servidor</Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
@@ -110,4 +118,6 @@ const styles = StyleSheet.create({
   btn: { backgroundColor: '#1F5EAA', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   hint: { color: '#4a5568', fontSize: 12, textAlign: 'center', marginTop: 20 },
+  serverLink: { marginTop: 16, alignItems: 'center' },
+  serverLinkText: { color: '#4a5568', fontSize: 12 },
 });

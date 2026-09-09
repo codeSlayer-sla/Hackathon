@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
 import { initDatabase } from './src/db/database';
+import { getServerUrl } from './src/config/serverConfig';
 import LoginScreen from './src/screens/LoginScreen';
+import ServerSetupScreen from './src/screens/ServerSetupScreen';
 import CaptureScreen from './src/screens/CaptureScreen';
 import ObservationsScreen from './src/screens/ObservationsScreen';
 import SyncScreen from './src/screens/SyncScreen';
@@ -11,13 +13,20 @@ type Tab = 'capture' | 'observations' | 'sync';
 
 export default function App() {
   const [dbReady, setDbReady] = useState(false);
+  const [serverUrl, setServerUrl] = useState<string | null>(null);
+  const [showServerSetup, setShowServerSetup] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [technicianName, setTechnicianName] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('capture');
   const [savedCount, setSavedCount] = useState(0);
 
   useEffect(() => {
-    initDatabase().then(() => setDbReady(true));
+    initDatabase().then(async () => {
+      setDbReady(true);
+      const url = await getServerUrl();
+      setServerUrl(url);
+      if (!url) setShowServerSetup(true);
+    });
   }, []);
 
   if (!dbReady) {
@@ -29,11 +38,30 @@ export default function App() {
     );
   }
 
+  if (showServerSetup) {
+    return (
+      <>
+        <StatusBar style="light" />
+        <ServerSetupScreen
+          initialUrl={serverUrl}
+          allowSkip={!!serverUrl}
+          onDone={async () => {
+            setServerUrl(await getServerUrl());
+            setShowServerSetup(false);
+          }}
+        />
+      </>
+    );
+  }
+
   if (!token) {
     return (
       <>
         <StatusBar style="light" />
-        <LoginScreen onLogin={(t, name) => { setToken(t); setTechnicianName(name); }} />
+        <LoginScreen
+          onLogin={(t, name) => { setToken(t); setTechnicianName(name); }}
+          onEditServer={() => setShowServerSetup(true)}
+        />
       </>
     );
   }
@@ -45,6 +73,9 @@ export default function App() {
       <View style={styles.header}>
         <View style={styles.logo}><Text style={styles.logoText}>PHILIPS</Text></View>
         <Text style={styles.headerName}>{technicianName}</Text>
+        <TouchableOpacity onPress={() => setShowServerSetup(true)}>
+          <Text style={styles.logout}>⚙</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => { setToken(null); setTechnicianName(''); }}>
           <Text style={styles.logout}>Salir</Text>
         </TouchableOpacity>

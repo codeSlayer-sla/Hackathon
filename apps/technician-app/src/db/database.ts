@@ -169,6 +169,29 @@ export async function getCachedPepper(): Promise<string | null> {
   return row?.value ?? null;
 }
 
+export async function getSetting(key: string): Promise<string | null> {
+  const row = await db().getFirstAsync<{ value: string }>(
+    'SELECT value FROM app_settings WHERE key = ?',
+    [key]
+  );
+  return row?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  await db().runAsync(
+    'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    [key, value]
+  );
+}
+
+export async function getServerUrl(): Promise<string | null> {
+  return getSetting('server_url');
+}
+
+export async function setServerUrl(url: string): Promise<void> {
+  await setSetting('server_url', url.trim().replace(/\/+$/, ''));
+}
+
 export async function findCachedTechnicianByPinHash(
   pinHash: string
 ): Promise<{ technician_id: string; name: string } | null> {
