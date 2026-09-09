@@ -38,6 +38,14 @@ export async function runSessionTurn(
 
   try {
     const { result, history: updatedHistory } = await extractFromTranscript(llmId, history, userText);
+    // Sessions default to a generic "Nueva visita" label -- with several
+    // open at once, that's indistinguishable in the list. Update it to the
+    // customer name as soon as the model identifies one, on every turn (not
+    // just the final save), so the list is always identifiable while a
+    // session is still in progress.
+    if (result.customer) {
+      await updateCaptureSession(sessionId, { label: result.customer });
+    }
 
     if (result.ready_to_save && result.customer && result.equipment.length > 0) {
       // Deterministic, not left to the model: a technician works a whole
