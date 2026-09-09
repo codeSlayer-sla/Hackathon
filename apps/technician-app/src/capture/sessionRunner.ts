@@ -39,12 +39,37 @@ function formatReviewSummary(result: ExtractionResult, country: string | null): 
 }
 
 /**
+ * Appends the user's message and marks the session 'processing' -- split out
+ * from runSessionTurn specifically so the UI can `await` this one small
+ * write before it starts polling. Polling and the actual model call used to
+ * race: nothing guaranteed this write landed before the first poll read, so
+ * a poll could catch the session still in its pre-turn state and either
+ * stomp the just-sent message back to "not there yet" or see a non-
+ * 'processing' status and stop polling prematurely -- both looked exactly
+ * like "my message doesn't show until I leave and reopen the session."
+ */
+export async function beginSessionTurn(sessionId: number, userText: string): Promise<void> {
+  const session = await getCaptureSession(sessionId);
+  if (!session) return;
+  const messages: DisplayMessage[] = JSON.parse(session.messages_json);
+  messages.push({ role: 'user', text: userText });
+  // Any new turn invalidates a prior pending review -- a typed correction
+  // instead of a confirm must not leave a stale result sitting around.
+  await updateCaptureSession(sessionId, {
+    messagesJson: JSON.stringify(messages),
+    pendingResultJson: null,
+    status: 'processing',
+  });
+}
+
+/**
  * Runs one turn of a capture session end to end, reading and writing
  * exclusively through SQLite -- no reference to any React component. Meant
- * to be fired without awaiting from the UI: if the screen showing this
- * session unmounts mid-request (user switched tabs or opened another
- * session), this keeps running and persists its result regardless, which is
- * the whole point -- a session's progress must survive not being looked at.
+ * to be fired without awaiting from the UI (call beginSessionTurn first,
+ * awaited): if the screen showing this session unmounts mid-request (user
+ * switched tabs or opened another session), this keeps running and persists
+ * its result regardless, which is the whole point -- a session's progress
+ * must survive not being looked at.
  */
 export async function runSessionTurn(
   sessionId: number,
@@ -56,15 +81,8 @@ export async function runSessionTurn(
   if (!session) return; // deleted/discarded already -- nothing to do
 
   const history: ConversationTurn[] = JSON.parse(session.history_json);
+  // Already includes the user's message -- beginSessionTurn persisted it.
   const messages: DisplayMessage[] = JSON.parse(session.messages_json);
-  messages.push({ role: 'user', text: userText });
-  // Any new turn invalidates a prior pending review -- a typed correction
-  // instead of a confirm must not leave a stale result sitting around.
-  await updateCaptureSession(sessionId, {
-    messagesJson: JSON.stringify(messages),
-    pendingResultJson: null,
-    status: 'processing',
-  });
 
   try {
     const { result, history: updatedHistory } = await extractFromTranscript(llmId, history, userText);

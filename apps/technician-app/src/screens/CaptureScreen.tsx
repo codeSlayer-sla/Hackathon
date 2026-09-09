@@ -14,7 +14,7 @@ import {
   type CaptureSessionSummary,
   type CaptureSessionStatus,
 } from '../db/database';
-import { runSessionTurn, confirmSession, discardSessionIfDone, type DisplayMessage } from '../capture/sessionRunner';
+import { beginSessionTurn, runSessionTurn, confirmSession, discardSessionIfDone, type DisplayMessage } from '../capture/sessionRunner';
 
 interface Props {
   technicianName: string;
@@ -257,12 +257,21 @@ function CaptureConversation({
 
   async function sendMessage(text: string, source: 'text' | 'voice' = 'text') {
     if (!text.trim() || status === 'processing') return;
-    setMessages((prev) => [...prev, { role: 'user', text: text.trim() }]);
+    const trimmed = text.trim();
+    setMessages((prev) => [...prev, { role: 'user', text: trimmed }]);
     setStatus('processing');
     setInput('');
-    // Fire-and-forget: this keeps running (and persists its result) even if
-    // the technician navigates away from this session before it resolves.
-    runSessionTurn(sessionId, llmId, text.trim(), source).catch(() => {});
+    // Awaited on purpose, before polling starts: this is the write that
+    // actually persists the message + 'processing' status. Without waiting
+    // for it, a poll tick could read the session before this landed, see
+    // the pre-turn state, and either stomp the optimistic update above back
+    // to "message not there yet" or see a non-'processing' status and stop
+    // polling before the real update ever arrives.
+    await beginSessionTurn(sessionId, trimmed);
+    // Fire-and-forget from here: the actual model call keeps running (and
+    // persists its result) even if the technician navigates away from this
+    // session before it resolves.
+    runSessionTurn(sessionId, llmId, trimmed, source).catch(() => {});
     startPolling();
   }
 
