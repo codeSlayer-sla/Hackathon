@@ -60,6 +60,16 @@ export async function initDatabase(): Promise<void> {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS capture_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      label TEXT NOT NULL,
+      history_json TEXT NOT NULL,
+      messages_json TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'idle',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 }
 
@@ -192,6 +202,17 @@ export async function setServerUrl(url: string): Promise<void> {
   await setSetting('server_url', url.trim().replace(/\/+$/, ''));
 }
 
+// Technicians typically work a whole trip within one country. Setting this
+// once removes an entire hallucination mode: the model never has to guess a
+// country the user didn't say, because the app fills it in deterministically.
+export async function getOperatingCountry(): Promise<string | null> {
+  return getSetting('operating_country');
+}
+
+export async function setOperatingCountry(country: string): Promise<void> {
+  await setSetting('operating_country', country.trim());
+}
+
 export async function findCachedTechnicianByPinHash(
   pinHash: string
 ): Promise<{ technician_id: string; name: string } | null> {
@@ -199,4 +220,62 @@ export async function findCachedTechnicianByPinHash(
     'SELECT technician_id, name FROM technicians_cache WHERE pin_hash = ?',
     [pinHash]
   );
+}
+
+// Capture sessions: one per in-progress visit conversation. Persisted (not
+// just component state) so switching tabs, starting another visit's
+// session, or fully closing the app doesn't lose an in-flight one --
+// history_json/messages_json are opaque JSON blobs the caller (qvac/models'
+// ConversationTurn[], and the chat UI's display messages) parses/stringifies
+// itself; this module doesn't need to know their shape.
+export type CaptureSessionStatus = 'idle' | 'processing' | 'done';
+
+export interface CaptureSessionSummary {
+  id: number;
+  label: string;
+  status: CaptureSessionStatus;
+  updated_at: string;
+}
+
+export interface CaptureSessionRecord extends CaptureSessionSummary {
+  history_json: string;
+  messages_json: string;
+}
+
+export async function createCaptureSession(label: string, historyJson: string): Promise<number> {
+  const result = await db().runAsync(
+    `INSERT INTO capture_sessions (label, history_json, messages_json, status) VALUES (?, ?, '[]', 'idle')`,
+    [label, historyJson]
+  );
+  return result.lastInsertRowId;
+}
+
+export async function listCaptureSessions(): Promise<CaptureSessionSummary[]> {
+  return db().getAllAsync<CaptureSessionSummary>(
+    'SELECT id, label, status, updated_at FROM capture_sessions ORDER BY updated_at DESC'
+  );
+}
+
+export async function getCaptureSession(id: number): Promise<CaptureSessionRecord | null> {
+  return db().getFirstAsync<CaptureSessionRecord>('SELECT * FROM capture_sessions WHERE id = ?', [id]);
+}
+
+export async function updateCaptureSession(
+  id: number,
+  fields: { historyJson?: string; messagesJson?: string; status?: CaptureSessionStatus; label?: string }
+): Promise<void> {
+  const sets: string[] = [];
+  const values: (string | number)[] = [];
+  if (fields.historyJson !== undefined) { sets.push('history_json = ?'); values.push(fields.historyJson); }
+  if (fields.messagesJson !== undefined) { sets.push('messages_json = ?'); values.push(fields.messagesJson); }
+  if (fields.status !== undefined) { sets.push('status = ?'); values.push(fields.status); }
+  if (fields.label !== undefined) { sets.push('label = ?'); values.push(fields.label); }
+  if (sets.length === 0) return;
+  sets.push("updated_at = datetime('now')");
+  values.push(id);
+  await db().runAsync(`UPDATE capture_sessions SET ${sets.join(', ')} WHERE id = ?`, values);
+}
+
+export async function deleteCaptureSession(id: number): Promise<void> {
+  await db().runAsync('DELETE FROM capture_sessions WHERE id = ?', [id]);
 }

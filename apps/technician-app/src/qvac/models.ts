@@ -71,7 +71,24 @@ export interface CompletionOutcome {
   cacheableAssistantContent?: string;
 }
 
-export async function runCompletion(
+// Only one loaded LLM instance exists on-device, and it can only actually
+// run one inference at a time -- with multiple capture sessions now able to
+// trigger a completion independently, this chains every call through a
+// single queue so a second session's request waits its turn instead of
+// racing/rejecting against the model that's still busy with the first.
+let llmQueue: Promise<unknown> = Promise.resolve();
+
+export function runCompletion(
+  modelId: string,
+  history: ConversationTurn[],
+  responseFormat?: Parameters<typeof completion>[0]['responseFormat']
+): Promise<CompletionOutcome> {
+  const task = llmQueue.then(() => runCompletionNow(modelId, history, responseFormat));
+  llmQueue = task.catch(() => {});
+  return task;
+}
+
+async function runCompletionNow(
   modelId: string,
   history: ConversationTurn[],
   responseFormat?: Parameters<typeof completion>[0]['responseFormat']
