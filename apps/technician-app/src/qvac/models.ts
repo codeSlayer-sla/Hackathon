@@ -19,7 +19,11 @@ export async function ensureLLM(onProgress?: ProgressCallback): Promise<string> 
     // Forced to CPU: QVAC's own docs list Android as having no physical-device
     // GPU acceptance yet, and this app hit a native crash right as the model
     // finished loading (the moment GPU buffer allocation would kick in).
-    modelConfig: { device: 'cpu', ctx_size: 2048 },
+    // `predict` hard-caps generated tokens per response -- without it a small
+    // model that falls into a repetition loop (a real, known failure mode)
+    // never naturally emits EOS and generation runs indefinitely, which looks
+    // exactly like the app "never answering."
+    modelConfig: { device: 'cpu', ctx_size: 2048, predict: 512 },
     onProgress: (p) => {
       onProgress?.(p.percentage, p.downloaded / 1e6, p.total / 1e6);
     },

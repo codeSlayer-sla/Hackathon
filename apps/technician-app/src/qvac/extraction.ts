@@ -32,6 +32,7 @@ const EXTRACTION_SCHEMA = {
     country: { type: ['string', 'null'] },
     equipment: {
       type: 'array',
+      maxItems: 20,
       items: {
         type: 'object',
         properties: {
