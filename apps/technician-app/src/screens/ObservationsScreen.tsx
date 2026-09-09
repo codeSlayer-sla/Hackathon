@@ -1,6 +1,5 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { listObservations, type LocalObservation } from '../db/database';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -19,12 +18,10 @@ export default function ObservationsScreen() {
   const [observations, setObservations] = useState<LocalObservation[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
-    useCallback(() => {
-      setLoading(true);
-      listObservations().then((rows) => { setObservations(rows); setLoading(false); });
-    }, [])
-  );
+  useEffect(() => {
+    setLoading(true);
+    listObservations().then((rows) => { setObservations(rows); setLoading(false); });
+  }, []);
 
   if (loading) {
     return <View style={styles.center}><ActivityIndicator color="#1F5EAA" /></View>;
