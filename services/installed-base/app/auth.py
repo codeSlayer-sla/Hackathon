@@ -66,6 +66,22 @@ def authenticate_pin(pin: str) -> tuple[str, str] | None:
     return _PIN_INDEX.get(_hash_pin(pin))
 
 
+def list_roster() -> dict:
+    """PIN hashes (never raw PINs) + the pepper, for the mobile app to cache
+    and verify logins locally when offline. Gated behind an existing token
+    (see get_current_technician below) so it's reachable only by a
+    technician who has already authenticated online at least once --
+    the pepper is not baked into the app bundle, so it can rotate without
+    a rebuild."""
+    return {
+        "pepper": AUTH_PEPPER,
+        "technicians": [
+            {"technician_id": tech_id, "name": t["name"], "pin_hash": _hash_pin(t["pin"])}
+            for tech_id, t in _DEMO_TECHNICIANS.items()
+        ],
+    }
+
+
 async def get_current_technician(authorization: str | None = Header(default=None)) -> tuple[str, str]:
     """FastAPI dependency: requires `Authorization: Bearer <token>`, returns
     (technician_id, name). The caller can never spoof this via a request

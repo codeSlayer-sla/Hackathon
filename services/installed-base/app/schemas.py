@@ -75,3 +75,14 @@ class SyncAcceptedItem(BaseModel):
 
 class SyncResponse(BaseModel):
     accepted: list[SyncAcceptedItem]
+
+
+class RosterEntry(BaseModel):
+    technician_id: str
+    name: str
+    pin_hash: str
+
+
+class RosterResponse(BaseModel):
+    pepper: str
+    technicians: list[RosterEntry]

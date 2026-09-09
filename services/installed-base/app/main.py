@@ -24,6 +24,7 @@ from . import auth, extraction
 from .schemas import (
     PhotoRecord,
     PhotoValidateRequest,
+    RosterResponse,
     SyncAcceptedItem,
     SyncRequest,
     SyncResponse,
@@ -178,6 +179,15 @@ async def authenticate(request: TechnicianAuthRequest) -> TechnicianAuthResponse
     technician_id, name = resolved
     token = auth.tokens.issue(technician_id, name)
     return TechnicianAuthResponse(token=token, technician_id=technician_id, name=name)
+
+
+@app.get("/auth/roster", response_model=RosterResponse)
+async def auth_roster(technician: tuple[str, str] = Depends(auth.get_current_technician)) -> RosterResponse:
+    """PIN hashes + pepper for the technician app's offline-login cache.
+    Requires a valid token, so only someone who already logged in online at
+    least once can pull it -- refresh this right after login and whenever
+    the app is online, not on-demand when already offline."""
+    return RosterResponse.model_validate(auth.list_roster())
 
 
 @app.post("/capture/turn", response_model=CaptureTurnResponse)
