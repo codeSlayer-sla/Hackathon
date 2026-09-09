@@ -54,11 +54,16 @@ export async function ensureWhisper(onProgress?: ProgressCallback): Promise<stri
   return whisperModelId;
 }
 
-export async function runCompletion(modelId: string, prompt: string): Promise<string> {
+export async function runCompletion(
+  modelId: string,
+  prompt: string,
+  responseFormat?: Parameters<typeof completion>[0]['responseFormat']
+): Promise<string> {
   const run = completion({
     modelId,
     history: [{ role: 'user', content: prompt }],
     stream: false,
+    responseFormat,
   });
   const final = await run.final;
   return final.contentText ?? '';
