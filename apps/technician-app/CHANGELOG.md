@@ -7,6 +7,7 @@ arriba.
 
 ## Setup
 
+- `93b2408` 2026-09-09: conversacion de captura reestructurada a multi-turno real (system + user/assistant alternados) con `kvCache: true` -- antes se reenviaba instrucciones + todo el transcript como un solo prompt gigante en cada mensaje, reprocesado entero cada vez; ahora solo se reprocesa el mensaje nuevo contra el prefijo cacheado
 - `8c3ff5f` 2026-09-09: extraccion ahora usa `responseFormat: json_schema` (grammar constraint de llama.cpp) en vez de confiar solo en la instruccion del prompt -- el modelo de 1B ignoraba "responde solo JSON" seguido y quedaba pegado en el fallback "no pude entender el mensaje"
 - `47af816` 2026-09-09: fix de transcripcion de voz -- se le pasaba la URI `file://` de expo-av tal cual al worker nativo de QVAC, que espera una ruta de filesystem plana (mismo `.replace('file://', '')` que el propio SDK hace con sus rutas)
 - `61545fb` 2026-09-09: fix de crash al abrir Registros/Sincronizar -- ambas pantallas usaban `useFocusEffect` de `@react-navigation/native` sin que la app tuviera un `NavigationContainer` (los tabs se manejan con estado plano en App.tsx); reemplazado por `useEffect` normal, misma conducta ya que cada tab se desmonta/remonta al cambiar
