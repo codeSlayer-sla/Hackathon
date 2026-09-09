@@ -7,6 +7,7 @@ arriba.
 
 ## Setup
 
+- `d3f5cee` 2026-09-09: app cerrandose antes de mostrar el login en el build mas reciente -- revertido `cache-type-k`/`cache-type-v` (sospechoso principal, config nativa nunca probada en dispositivo real) y movido `preloadLLM()` de arrancar al boot a arrancar despues del login, para aislar si el timing del preload tambien es factor; pendiente confirmar con el proximo build
 - `a9c11a1` 2026-09-09: pasada de diseño -- todos los emoji-como-icono (mic, tabs, checks, chevrons, engranaje, buscador, estado de sync) reemplazados por `@expo/vector-icons` (Ionicons, sin dependencia nativa nueva mas alla de expo-font que Expo ya trae); la pantalla de confirmar-antes-de-guardar (la mas importante, es lo ultimo que revisa el tecnico antes de que el dato quede permanente) pasa de un bloque de texto en un bubble de chat a una tarjeta estructurada (`ReviewSummaryCard`) con filas etiquetadas (cliente/ubicacion/equipos)
 - `1c0468d` 2026-09-09: `cache-type-k`/`cache-type-v: q8_0` en la carga del LLM -- reduce a la mitad el uso de memoria del KV cache (f16 -> q8_0), palanca estandar de llama.cpp para inferencia en CPU, sin tocar la calidad del modelo; requiere flash attention, que el addon de QVAC ya trae en "on" por defecto para este tipo de modelo
 - `d6bbbfe` 2026-09-09: pais de operacion ahora es una lista fija con buscador (Modal + FlatList, sin dependencia nativa nueva) en vez de texto libre -- un typo o inconsistencia de escritura fragmentaba el mismo pais en strings distintos entre observaciones
