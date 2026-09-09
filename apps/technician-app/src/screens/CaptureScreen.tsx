@@ -14,7 +14,7 @@ import {
   type CaptureSessionSummary,
   type CaptureSessionStatus,
 } from '../db/database';
-import { runSessionTurn, discardSessionIfDone, type DisplayMessage } from '../capture/sessionRunner';
+import { runSessionTurn, confirmSession, discardSessionIfDone, type DisplayMessage } from '../capture/sessionRunner';
 
 interface Props {
   technicianName: string;
@@ -163,6 +163,8 @@ function SessionListView({
                   <ActivityIndicator color="#00C4CC" size="small" />
                   <Text style={styles.processingText}>Procesando…</Text>
                 </View>
+              ) : item.status === 'review' ? (
+                <Text style={styles.reviewText}>📝 Esperando confirmación</Text>
               ) : item.status === 'done' ? (
                 <Text style={styles.doneText}>✅ Listo -- toca para ver</Text>
               ) : (
@@ -255,8 +257,19 @@ function CaptureConversation({
     setInput('');
     // Fire-and-forget: this keeps running (and persists its result) even if
     // the technician navigates away from this session before it resolves.
-    runSessionTurn(sessionId, llmId, text.trim(), source, technicianName).catch(() => {});
+    runSessionTurn(sessionId, llmId, text.trim(), source).catch(() => {});
     startPolling();
+  }
+
+  async function handleConfirm() {
+    if (status !== 'review') return;
+    setStatus('processing');
+    await confirmSession(sessionId, technicianName);
+    const session = await getCaptureSession(sessionId);
+    if (session) {
+      setMessages(JSON.parse(session.messages_json));
+      setStatus(session.status);
+    }
   }
 
   async function startRecording() {
@@ -304,6 +317,7 @@ function CaptureConversation({
   }
 
   const processing = status === 'processing';
+  const review = status === 'review';
   const done = status === 'done';
 
   return (
@@ -323,7 +337,7 @@ function CaptureConversation({
           <ScrollView ref={scrollRef} style={styles.chat} contentContainerStyle={{ padding: 16, gap: 10 }}>
             {messages.map((m, i) => (
               <View key={i} style={[styles.bubble, m.role === 'user' ? styles.bubbleUser : styles.bubbleAgent]}>
-                <Text style={styles.bubbleRole}>{m.role === 'user' ? technicianName : 'AI Mesh'}</Text>
+                <Text style={styles.bubbleRole}>{m.role === 'user' ? technicianName : 'Phil'}</Text>
                 <Text style={styles.bubbleText}>{m.text}</Text>
               </View>
             ))}
@@ -341,34 +355,44 @@ function CaptureConversation({
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.inputRow}>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Describe lo que observaste…"
-                placeholderTextColor="#4a5568"
-                value={input}
-                onChangeText={setInput}
-                multiline
-                editable={!processing && !transcribing}
-              />
-              <TouchableOpacity
-                style={[styles.micBtn, isRecording && styles.micBtnRecording]}
-                onPress={isRecording ? stopRecording : startRecording}
-                disabled={processing || transcribing}
-              >
-                {transcribing
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={styles.micIcon}>{isRecording ? '⏹' : '🎤'}</Text>
-                }
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.sendBtn, (!input.trim() || processing || transcribing) && styles.sendBtnDisabled]}
-                onPress={() => sendMessage(input)}
-                disabled={!input.trim() || processing || transcribing}
-              >
-                <Text style={styles.sendIcon}>➤</Text>
-              </TouchableOpacity>
-            </View>
+            <>
+              {review && (
+                <View style={styles.confirmRow}>
+                  <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
+                    <Text style={styles.confirmBtnText}>✅ Confirmar y guardar</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.confirmHint}>¿Algo mal? Escríbelo abajo en vez de confirmar.</Text>
+                </View>
+              )}
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder={review ? 'O escribe una corrección…' : 'Describe lo que observaste…'}
+                  placeholderTextColor="#4a5568"
+                  value={input}
+                  onChangeText={setInput}
+                  multiline
+                  editable={!processing && !transcribing}
+                />
+                <TouchableOpacity
+                  style={[styles.micBtn, isRecording && styles.micBtnRecording]}
+                  onPress={isRecording ? stopRecording : startRecording}
+                  disabled={processing || transcribing}
+                >
+                  {transcribing
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={styles.micIcon}>{isRecording ? '⏹' : '🎤'}</Text>
+                  }
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.sendBtn, (!input.trim() || processing || transcribing) && styles.sendBtnDisabled]}
+                  onPress={() => sendMessage(input)}
+                  disabled={!input.trim() || processing || transcribing}
+                >
+                  <Text style={styles.sendIcon}>➤</Text>
+                </TouchableOpacity>
+              </View>
+            </>
           )}
         </>
       )}
@@ -400,6 +424,7 @@ const styles = StyleSheet.create({
   processingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   processingText: { color: '#00C4CC', fontSize: 12, fontWeight: '600' },
   doneText: { color: '#22c55e', fontSize: 12, fontWeight: '600' },
+  reviewText: { color: '#f59e0b', fontSize: 12, fontWeight: '600' },
   idleText: { color: '#8fa3bf', fontSize: 12 },
   chat: { flex: 1 },
   bubble: { borderRadius: 12, padding: 12, maxWidth: '85%' },
@@ -407,6 +432,10 @@ const styles = StyleSheet.create({
   bubbleAgent: { backgroundColor: '#131929', borderWidth: 1, borderColor: '#253060', alignSelf: 'flex-start' },
   bubbleRole: { color: '#8fa3bf', fontSize: 11, fontWeight: '700', marginBottom: 4 },
   bubbleText: { color: '#e2e8f0', fontSize: 14, lineHeight: 20 },
+  confirmRow: { padding: 12, paddingBottom: 0, gap: 6 },
+  confirmBtn: { backgroundColor: '#15803d', borderRadius: 10, paddingVertical: 14, alignItems: 'center' },
+  confirmBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  confirmHint: { color: '#8fa3bf', fontSize: 12, textAlign: 'center' },
   inputRow: { flexDirection: 'row', padding: 12, gap: 8, borderTopWidth: 1, borderTopColor: '#253060' },
   textInput: { flex: 1, backgroundColor: '#131929', borderWidth: 1, borderColor: '#253060', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, color: '#e2e8f0', fontSize: 14, maxHeight: 100 },
   sendBtn: { backgroundColor: '#1F5EAA', borderRadius: 10, width: 44, justifyContent: 'center', alignItems: 'center' },

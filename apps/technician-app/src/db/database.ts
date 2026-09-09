@@ -66,6 +66,7 @@ export async function initDatabase(): Promise<void> {
       label TEXT NOT NULL,
       history_json TEXT NOT NULL,
       messages_json TEXT NOT NULL DEFAULT '[]',
+      pending_result_json TEXT,
       status TEXT NOT NULL DEFAULT 'idle',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -228,7 +229,11 @@ export async function findCachedTechnicianByPinHash(
 // history_json/messages_json are opaque JSON blobs the caller (qvac/models'
 // ConversationTurn[], and the chat UI's display messages) parses/stringifies
 // itself; this module doesn't need to know their shape.
-export type CaptureSessionStatus = 'idle' | 'processing' | 'done';
+// 'review': the model claims it's ready to save, but a human hasn't
+// confirmed yet -- fields like quantity/brand/model have no deterministic
+// override the way country does, so the only real defense against a
+// hallucinated value is a checkpoint before it becomes a real record.
+export type CaptureSessionStatus = 'idle' | 'processing' | 'review' | 'done';
 
 export interface CaptureSessionSummary {
   id: number;
@@ -240,6 +245,7 @@ export interface CaptureSessionSummary {
 export interface CaptureSessionRecord extends CaptureSessionSummary {
   history_json: string;
   messages_json: string;
+  pending_result_json: string | null;
 }
 
 export async function createCaptureSession(label: string, historyJson: string): Promise<number> {
@@ -262,14 +268,21 @@ export async function getCaptureSession(id: number): Promise<CaptureSessionRecor
 
 export async function updateCaptureSession(
   id: number,
-  fields: { historyJson?: string; messagesJson?: string; status?: CaptureSessionStatus; label?: string }
+  fields: {
+    historyJson?: string;
+    messagesJson?: string;
+    status?: CaptureSessionStatus;
+    label?: string;
+    pendingResultJson?: string | null;
+  }
 ): Promise<void> {
   const sets: string[] = [];
-  const values: (string | number)[] = [];
+  const values: (string | number | null)[] = [];
   if (fields.historyJson !== undefined) { sets.push('history_json = ?'); values.push(fields.historyJson); }
   if (fields.messagesJson !== undefined) { sets.push('messages_json = ?'); values.push(fields.messagesJson); }
   if (fields.status !== undefined) { sets.push('status = ?'); values.push(fields.status); }
   if (fields.label !== undefined) { sets.push('label = ?'); values.push(fields.label); }
+  if (fields.pendingResultJson !== undefined) { sets.push('pending_result_json = ?'); values.push(fields.pendingResultJson); }
   if (sets.length === 0) return;
   sets.push("updated_at = datetime('now')");
   values.push(id);

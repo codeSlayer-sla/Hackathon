@@ -5,12 +5,37 @@ import {
   insertObservations,
   getOperatingCountry,
 } from '../db/database';
-import { extractFromTranscript } from '../qvac/extraction';
+import { extractFromTranscript, type ExtractionResult } from '../qvac/extraction';
 import type { ConversationTurn } from '../qvac/models';
 
 export interface DisplayMessage {
   role: 'user' | 'agent';
   text: string;
+}
+
+// What actually gets saved once confirmed -- result plus the country already
+// resolved (deterministic override applied once here, not recomputed later)
+// and which turn's modality produced it, so confirmSession doesn't need
+// either passed back in from outside.
+interface PendingResult {
+  result: ExtractionResult;
+  country: string | null;
+  source: 'text' | 'voice';
+}
+
+function formatReviewSummary(result: ExtractionResult, country: string | null): string {
+  const equipmentLines = result.equipment
+    .map((e) => `• ${e.quantity ?? '?'}x ${e.modality}${e.brand ? ` (${e.brand}${e.model ? ` ${e.model}` : ''})` : ''}${e.approx_age_years ? `, ~${e.approx_age_years} años` : ''}`)
+    .join('\n');
+  const location = [result.city, country].filter(Boolean).join(', ') || 'sin especificar';
+  return (
+    `📝 Listo para guardar -- revisa antes de confirmar:\n\n` +
+    `Cliente: ${result.customer}\n` +
+    `Ubicación: ${location}\n` +
+    `Equipos:\n${equipmentLines}\n\n` +
+    `Si algo está mal, escríbelo (ej. "en realidad son 3 equipos" o "el modelo es X"). ` +
+    `Si está correcto, toca "Confirmar y guardar".`
+  );
 }
 
 /**
@@ -25,8 +50,7 @@ export async function runSessionTurn(
   sessionId: number,
   llmId: string,
   userText: string,
-  source: 'text' | 'voice',
-  technicianName: string
+  source: 'text' | 'voice'
 ): Promise<void> {
   const session = await getCaptureSession(sessionId);
   if (!session) return; // deleted/discarded already -- nothing to do
@@ -34,7 +58,13 @@ export async function runSessionTurn(
   const history: ConversationTurn[] = JSON.parse(session.history_json);
   const messages: DisplayMessage[] = JSON.parse(session.messages_json);
   messages.push({ role: 'user', text: userText });
-  await updateCaptureSession(sessionId, { messagesJson: JSON.stringify(messages), status: 'processing' });
+  // Any new turn invalidates a prior pending review -- a typed correction
+  // instead of a confirm must not leave a stale result sitting around.
+  await updateCaptureSession(sessionId, {
+    messagesJson: JSON.stringify(messages),
+    pendingResultJson: null,
+    status: 'processing',
+  });
 
   try {
     const { result, history: updatedHistory } = await extractFromTranscript(llmId, history, userText);
@@ -54,29 +84,19 @@ export async function runSessionTurn(
       // countries in testing. The configured country always wins when set.
       const operatingCountry = await getOperatingCountry();
       const country = operatingCountry || result.country;
-      const saved = await insertObservations(
-        result.customer,
-        result.city,
-        country,
-        result.equipment,
-        technicianName,
-        source
-      );
-      const summary = saved
-        .map((o) => `${o.quantity ?? '?'}x ${o.modality}${o.brand ? ` (${o.brand})` : ''}`)
-        .join(', ');
-      messages.push({
-        role: 'agent',
-        text: `✅ Guardado para ${result.customer}: ${summary}. Datos listos para sincronizar con el servidor Philips.`,
-      });
-      // Kept as "done" (not deleted) so whoever is actively watching this
-      // session sees the confirmation -- the chat view deletes it when the
-      // technician leaves that screen, since the data now lives in
-      // observations, not here.
+
+      // The model claiming "ready" is not the same as it being correct --
+      // quantity/brand/model have no deterministic override the way country
+      // does, and testing showed real hallucinations here. Hold for an
+      // explicit human confirm instead of saving straight to observations;
+      // a correction typed here just becomes the next normal turn.
+      const pending: PendingResult = { result, country, source };
+      messages.push({ role: 'agent', text: formatReviewSummary(result, country) });
       await updateCaptureSession(sessionId, {
         historyJson: JSON.stringify(updatedHistory),
         messagesJson: JSON.stringify(messages),
-        status: 'done',
+        pendingResultJson: JSON.stringify(pending),
+        status: 'review',
       });
     } else {
       const follow = result.follow_up_question ?? '¿Puedes darme más detalles?';
@@ -91,6 +111,47 @@ export async function runSessionTurn(
     messages.push({ role: 'agent', text: `Error: ${e.message}` });
     await updateCaptureSession(sessionId, { messagesJson: JSON.stringify(messages), status: 'idle' });
   }
+}
+
+/**
+ * Commits a session's pending (human-confirmed) result to observations.
+ * Only meaningful when the session is in 'review' -- if the pending result
+ * is gone (e.g. a correction was typed instead, which reruns runSessionTurn
+ * and clears it), this is a no-op rather than saving stale data.
+ */
+export async function confirmSession(sessionId: number, technicianName: string): Promise<void> {
+  const session = await getCaptureSession(sessionId);
+  if (!session || !session.pending_result_json) return;
+
+  const pending: PendingResult = JSON.parse(session.pending_result_json);
+  const messages: DisplayMessage[] = JSON.parse(session.messages_json);
+  const { result, country, source } = pending;
+  if (!result.customer) return; // shouldn't happen -- only stored once customer was set
+
+  const saved = await insertObservations(
+    result.customer,
+    result.city,
+    country,
+    result.equipment,
+    technicianName,
+    source
+  );
+  const summary = saved
+    .map((o) => `${o.quantity ?? '?'}x ${o.modality}${o.brand ? ` (${o.brand})` : ''}`)
+    .join(', ');
+  messages.push({
+    role: 'agent',
+    text: `✅ Guardado para ${result.customer}: ${summary}. Datos listos para sincronizar con el servidor Philips.`,
+  });
+  // Kept as "done" (not deleted) so whoever is actively watching this
+  // session sees the confirmation -- the chat view deletes it when the
+  // technician leaves that screen, since the data now lives in
+  // observations, not here.
+  await updateCaptureSession(sessionId, {
+    messagesJson: JSON.stringify(messages),
+    pendingResultJson: null,
+    status: 'done',
+  });
 }
 
 export async function discardSessionIfDone(sessionId: number): Promise<void> {
