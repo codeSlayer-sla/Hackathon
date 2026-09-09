@@ -119,12 +119,16 @@ export default function CaptureScreen({ technicianName, onSaved }: Props) {
       const uri = recordingObj.getURI();
       setRecordingObj(null);
       if (!uri) throw new Error('No se obtuvo URI de audio');
+      // QVAC's native worker wants a plain filesystem path, not a file://
+      // URI (expo-av's getURI() always returns the latter) -- same
+      // normalization the SDK itself does internally for its own paths.
+      const audioPath = uri.replace(/^file:\/\//, '');
       let wId = whisperId;
       if (!wId) {
         wId = await ensureWhisper();
         setWhisperId(wId);
       }
-      const text = await runTranscription(wId, uri);
+      const text = await runTranscription(wId, audioPath);
       if (text.trim()) {
         await sendMessage(text, 'voice');
       }
