@@ -36,6 +36,7 @@ de este monorepo.
 
 ## Installed Base (Philips Challenge)
 
+- `5bf690b` 2026-09-09: `POST /sync` -- acepta en batch la cola offline de la app movil, idempotente por (tecnico, local_id) via el mismo cache de `processed_events`
 - `0342b14` 2026-09-08: `compute_confidence` ahora factoriza la antiguedad de la observacion (se recalcula en cada lectura, no queda congelado al insertar)
 - `7d2f647` 2026-09-08: auth de tecnico por PIN, captura por voz, captura por foto con cola de revision, confidence combinado, freshness/oportunidades, `/query` en lenguaje natural, idempotencia via `client_event_id` (cierra los 5 stretch goals + arquitectura multi-nodo)
 - `2e748e6` 2026-09-07: suite pytest -- parseo JSON defensivo, deteccion de duplicados, analytics, `/capture/turn` con Router/Peer mockeados
