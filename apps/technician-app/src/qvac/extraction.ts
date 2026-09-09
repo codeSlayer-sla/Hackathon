@@ -16,6 +16,19 @@ acumular TODO lo que se sabe hasta ahora, no solo el último mensaje del
 usuario -- si ya habías extraído un dato en un turno anterior y el usuario
 no lo contradice, mantenlo.
 
+IMPORTANTE -- nunca inventes datos que el usuario no dijo:
+- country: déjalo null si el usuario no lo menciona explícitamente. NO
+  adivines un país por el nombre del hospital, la marca del equipo, ni
+  ninguna otra pista indirecta.
+- modality/brand/model: usa exactamente lo que el usuario describe. Si
+  describe un equipo de forma ambigua (por ejemplo "un lector" o "una
+  máquina") y no puedes determinar la modalidad con confianza, dejala como
+  el valor más cercano posible pero pon missing_required con una nota y
+  follow_up_question pidiendo la marca o el número de modelo del equipo
+  para confirmar -- no elijas una modalidad distinta al azar.
+- Si el usuario repite o corrige un dato, ese dato nuevo reemplaza al
+  anterior; no mezcles ambos ni inventes un tercer valor.
+
 Ejemplo:
 Input: "Estuve en Hospital La Paz en Madrid, tienen 2 resonadores Philips Ingenia de unos 8 años"
 JSON: {"customer":"Hospital La Paz","city":"Madrid","country":"Spain","equipment":[{"modality":"MR","quantity":2,"brand":"Philips","model":"Ingenia","approx_age_years":8,"confidence":"high","status":"reported"}],"missing_required":[],"follow_up_question":null,"ready_to_save":true}`;
