@@ -19,6 +19,7 @@ import ReviewSummaryCard from './ReviewSummaryCard';
 
 interface Props {
   technicianName: string;
+  token: string | null;
   onSaved: () => void;
 }
 
@@ -29,7 +30,7 @@ const GREETING: DisplayMessage = {
   text: '¡Hola! Describe la visita que realizaste: hospital, equipos que viste, marcas, antigüedad. Yo extraigo los datos automáticamente.',
 };
 
-export default function CaptureScreen({ technicianName, onSaved }: Props) {
+export default function CaptureScreen({ technicianName, token, onSaved }: Props) {
   // Preloaded from App.tsx on boot -- if it already finished (the common
   // case, since it had the whole login screen as a head start), skip
   // straight to 'ready' instead of flashing a loading screen for a model
@@ -106,6 +107,7 @@ export default function CaptureScreen({ technicianName, onSaved }: Props) {
         sessionId={activeSessionId}
         llmId={llmId}
         technicianName={technicianName}
+        token={token}
         onBack={() => handleBackToList(activeSessionId)}
         onSaved={onSaved}
       />
@@ -191,12 +193,14 @@ function CaptureConversation({
   sessionId,
   llmId,
   technicianName,
+  token,
   onBack,
   onSaved,
 }: {
   sessionId: number;
   llmId: string;
   technicianName: string;
+  token: string | null;
   onBack: () => void;
   onSaved: () => void;
 }) {
@@ -275,7 +279,7 @@ function CaptureConversation({
     // Fire-and-forget from here: the actual model call keeps running (and
     // persists its result) even if the technician navigates away from this
     // session before it resolves.
-    runSessionTurn(sessionId, llmId, trimmed, source).catch(() => {});
+    runSessionTurn(sessionId, llmId, trimmed, source, token).catch(() => {});
     startPolling();
   }
 
@@ -356,13 +360,15 @@ function CaptureConversation({
             {messages.map((m, i) =>
               m.review ? (
                 <View key={i} style={styles.reviewWrap}>
-                  <Text style={styles.bubbleRole}>Phil</Text>
+                  <Text style={styles.bubbleRole}>Phil{m.viaRemote ? ' · nodo principal' : ''}</Text>
                   <Text style={styles.reviewHint}>{m.text}</Text>
                   <ReviewSummaryCard review={m.review} />
                 </View>
               ) : (
                 <View key={i} style={[styles.bubble, m.role === 'user' ? styles.bubbleUser : styles.bubbleAgent]}>
-                  <Text style={styles.bubbleRole}>{m.role === 'user' ? technicianName : 'Phil'}</Text>
+                  <Text style={styles.bubbleRole}>
+                    {m.role === 'user' ? technicianName : `Phil${m.viaRemote ? ' · nodo principal' : ''}`}
+                  </Text>
                   <Text style={styles.bubbleText}>{m.text}</Text>
                 </View>
               )

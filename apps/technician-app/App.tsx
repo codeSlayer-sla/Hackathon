@@ -94,6 +94,7 @@ export default function App() {
         {activeTab === 'capture' && (
           <CaptureScreen
             technicianName={technicianName}
+            token={token}
             onSaved={() => setSavedCount((n) => n + 1)}
           />
         )}

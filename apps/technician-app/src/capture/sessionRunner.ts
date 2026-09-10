@@ -5,7 +5,7 @@ import {
   insertObservations,
   getOperatingCountry,
 } from '../db/database';
-import { extractFromTranscript, type ExtractionResult } from '../qvac/extraction';
+import { extractFromTranscript, extractFromTranscriptRemote, type ExtractionResult } from '../qvac/extraction';
 import type { ConversationTurn } from '../qvac/models';
 
 export interface ReviewEquipmentLine {
@@ -30,6 +30,10 @@ export interface DisplayMessage {
   // of plain text, since it's the one screen a technician actually needs
   // to check field-by-field before data becomes a real record.
   review?: ReviewSummary;
+  // True when this reply came from the mesh's main node instead of the
+  // phone's own model -- shown as a small tag so it's visible which one
+  // actually answered.
+  viaRemote?: boolean;
 }
 
 // What actually gets saved once confirmed -- result plus the country already
@@ -93,7 +97,8 @@ export async function runSessionTurn(
   sessionId: number,
   llmId: string,
   userText: string,
-  source: 'text' | 'voice'
+  source: 'text' | 'voice',
+  token: string | null
 ): Promise<void> {
   const session = await getCaptureSession(sessionId);
   if (!session) return; // deleted/discarded already -- nothing to do
@@ -103,7 +108,16 @@ export async function runSessionTurn(
   const messages: DisplayMessage[] = JSON.parse(session.messages_json);
 
   try {
-    const { result, history: updatedHistory } = await extractFromTranscript(llmId, history, userText);
+    // Prefer the mesh's main node when actually logged in online (an
+    // offline-fallback token was never issued by the server, so it can't
+    // authenticate there) -- extractFromTranscriptRemote returns null on
+    // any failure (unreachable, timeout, non-2xx), which falls straight
+    // through to on-device without special-casing the error.
+    const canGoRemote = !!token && !token.startsWith('offline-');
+    const remoteOutcome = canGoRemote ? await extractFromTranscriptRemote(token!, history, userText) : null;
+    const viaRemote = !!remoteOutcome;
+    const { result, history: updatedHistory } =
+      remoteOutcome ?? (await extractFromTranscript(llmId, history, userText));
     // Sessions default to a generic "Nueva visita" label -- with several
     // open at once, that's indistinguishable in the list. Update it to the
     // customer name as soon as the model identifies one, on every turn (not
@@ -131,6 +145,7 @@ export async function runSessionTurn(
         role: 'agent',
         text: 'Revisa los datos antes de confirmar. Si algo está mal, escríbelo (ej. "en realidad son 3 equipos"); si está correcto, toca "Confirmar y guardar".',
         review: buildReviewSummary(result, country),
+        viaRemote,
       });
       await updateCaptureSession(sessionId, {
         historyJson: JSON.stringify(updatedHistory),
@@ -140,7 +155,7 @@ export async function runSessionTurn(
       });
     } else {
       const follow = result.follow_up_question ?? '¿Puedes darme más detalles?';
-      messages.push({ role: 'agent', text: follow });
+      messages.push({ role: 'agent', text: follow, viaRemote });
       await updateCaptureSession(sessionId, {
         historyJson: JSON.stringify(updatedHistory),
         messagesJson: JSON.stringify(messages),

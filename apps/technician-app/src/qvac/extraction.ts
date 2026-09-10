@@ -1,4 +1,5 @@
 import { runCompletion, type ConversationTurn } from './models';
+import { getServerUrl } from '../config/serverConfig';
 
 const SYSTEM_INSTRUCTIONS = `Extraes datos estructurados de observaciones de equipos médicos de visitas a hospitales.
 
@@ -252,5 +253,61 @@ export async function extractFromTranscript(
   const userTexts = withUser.filter((t) => t.role === 'user').map((t) => t.content).join(' ');
   const result = groundResult(parsed, userTexts);
   const assistantContent = outcome.cacheableAssistantContent ?? outcome.text;
+  return { result, history: [...withUser, { role: 'assistant', content: assistantContent }] };
+}
+
+/**
+ * Same contract as extractFromTranscript, but the actual inference runs on
+ * the mesh's main node (POST /extract on services/installed-base) instead
+ * of on-device -- whatever model the Router has registered for
+ * "completion" answers, which can be a lot bigger than what the phone can
+ * run. Returns null on any failure (unreachable server, timeout, non-2xx,
+ * offline token) so the caller can fall back to on-device without special-
+ * casing the error. The same groundResult check runs regardless of source:
+ * the backend's extraction is prompt-based, not grammar-constrained (see
+ * services/installed-base/app/extraction.py), so it's less trustworthy on
+ * its own than the on-device grammar-constrained path, not more.
+ */
+export async function extractFromTranscriptRemote(
+  token: string,
+  history: ConversationTurn[],
+  userText: string
+): Promise<{ result: ExtractionResult; history: ConversationTurn[] } | null> {
+  const server = await getServerUrl();
+  if (!server) return null;
+
+  const withUser: ConversationTurn[] = [...history, { role: 'user', content: userText }];
+  const transcript = withUser.filter((t) => t.role === 'user').map((t) => t.content);
+
+  let raw: any;
+  try {
+    const resp = await fetch(`${server}/extract`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ transcript }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!resp.ok) return null;
+    raw = await resp.json();
+  } catch {
+    return null;
+  }
+
+  const parsed: ExtractionResult = {
+    customer: raw.customer ?? null,
+    city: raw.city ?? null,
+    country: raw.country ?? null,
+    equipment: Array.isArray(raw.equipment) ? raw.equipment : [],
+    missing_required: Array.isArray(raw.missing_required) ? raw.missing_required : [],
+    follow_up_question: null,
+    ready_to_save: Boolean(raw.ready_to_save),
+  };
+  const result = groundResult(parsed, transcript.join(' '));
+  // Recorded as a synthetic assistant turn in the same JSON shape the
+  // on-device model would have produced, so history stays continuable if a
+  // later turn in this same session falls back to on-device (server drops
+  // mid-conversation) -- the local model just sees a prior JSON reply, same
+  // as if it had written it itself.
+  const assistantContent = JSON.stringify(parsed);
   return { result, history: [...withUser, { role: 'assistant', content: assistantContent }] };
 }
