@@ -231,8 +231,9 @@ async def upload_photo(
 ) -> PhotoRecord:
     technician_id, _ = technician
     photo_path = os.path.join(MEDIA_DIR, "photos", f"{uuid.uuid4()}.jpg")
+    data = extraction.prepare_photo_bytes(await photo.read())
     with open(photo_path, "wb") as f:
-        f.write(await photo.read())
+        f.write(data)
     record = store.insert_photo(photo_path, customer, technician_id)
     return PhotoRecord.model_validate(record)
 

@@ -17,9 +17,9 @@ the README; prompting + defensive parsing is the safe MVP path.
 
 from __future__ import annotations
 
+import io
 import json
 import logging
-import re
 import uuid
 
 import httpx
@@ -63,16 +63,9 @@ _TEXT_FALLBACK = {
     "ready_to_save": False,
 }
 
-_PHOTO_INSTRUCTIONS = """Look at the attached photo of a piece of hospital equipment (or its label/nameplate).
-
-Identify, when visible:
-- modality: a short label such as MR, CT, Ultrasound, X-Ray, Patient Monitoring, Image Guided Therapy
-- brand: the manufacturer name if visible on a label
-- model: the model/product name if visible
-- confidence: "high" | "medium" | "low" based on how clearly the label/equipment is visible
-- reasoning: one short sentence on what you saw that led to this guess
-
-Respond with ONLY one JSON object, no prose, no markdown fences:
+_PHOTO_INSTRUCTIONS = """Analyze the attached photo of hospital equipment or its label/nameplate.
+Fields: modality (MR, CT, Ultrasound, X-Ray, Patient Monitoring, Image Guided Therapy), brand/model if visible, confidence ("high"|"medium"|"low" by label clarity), reasoning (one short sentence).
+Return ONLY one JSON object, no prose, no markdown fences:
 {"modality": string|null, "brand": string|null, "model": string|null, "confidence": string, "reasoning": string}
 """
 
@@ -83,6 +76,55 @@ _PHOTO_FALLBACK = {
     "confidence": "low",
     "reasoning": "Could not analyze the image (peer unavailable or response unparsable).",
 }
+
+_PHOTO_MAX_DIMENSION = 1280
+_PHOTO_JPEG_QUALITY = 85
+
+
+def prepare_photo_bytes(
+    data: bytes,
+    max_dimension: int = _PHOTO_MAX_DIMENSION,
+    jpeg_quality: int = _PHOTO_JPEG_QUALITY,
+) -> bytes:
+    """Downscale and re-encode an uploaded photo as a JPEG so very large
+    originals don't inflate the multimodal context (VisionPsy Nano's
+    effective context is small and big photos overflow it).
+
+    - The longest side is capped at `max_dimension` (1280px default) with the
+      aspect ratio preserved; smaller images are left at their original size.
+    - Re-encoded as JPEG at `jpeg_quality` (85 default) to keep label/nameplate
+      detail while shrinking image token usage vs. a huge original.
+    - Returns the original bytes unchanged if Pillow is unavailable or the
+      image can't be decoded/re-encoded, preserving the existing upload/error
+      behavior for corrupt or unsupported uploads.
+    """
+    if not data:
+        return data
+    try:
+        from PIL import Image
+    except ImportError:
+        logger.debug("Pillow not installed; storing photo as-is")
+        return data
+
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            image.load()
+            longest = max(image.size)
+            if longest > max_dimension:
+                scale = max_dimension / longest
+                new_size = (
+                    max(1, round(image.size[0] * scale)),
+                    max(1, round(image.size[1] * scale)),
+                )
+                image = image.resize(new_size, Image.Resampling.LANCZOS)
+            if image.mode not in ("RGB", "L"):
+                image = image.convert("RGB")
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=jpeg_quality, optimize=True)
+            return buffer.getvalue()
+    except Exception:
+        logger.warning("Could not re-encode uploaded photo; storing as-is", exc_info=True)
+        return data
 
 _QUERY_INSTRUCTIONS = """Translate this question about an installed-base equipment dataset into a JSON filter.
 
@@ -109,15 +151,45 @@ def build_query_prompt(question: str) -> str:
     return f"{_QUERY_INSTRUCTIONS}{question}\nJSON:"
 
 
+def _candidate_json_objects(raw_answer: str) -> list[str]:
+    """Slices of the answer delimited by balanced braces, outermost-first, in
+    order of appearance. Each slice is a candidate valid JSON object."""
+    candidates = []
+    start = -1
+    depth = 0
+    for i, ch in enumerate(raw_answer):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth = max(depth - 1, 0)
+            if depth == 0 and start != -1:
+                candidates.append(raw_answer[start : i + 1])
+                start = -1
+    return candidates
+
+
 def _safe_parse_json(raw_answer: str, fallback: dict, defaults: dict | None = None) -> dict:
-    match = re.search(r"\{.*\}", raw_answer, re.S)
-    if not match:
-        logger.warning("No JSON object found in model answer: %r", raw_answer[:200])
-        return dict(fallback)
+    stripped = raw_answer.strip()
     try:
-        parsed = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        logger.warning("Malformed JSON in model answer: %r", raw_answer[:200])
+        parsed = json.loads(stripped)
+    except (json.JSONDecodeError, TypeError):
+        parsed = None
+
+    if not isinstance(parsed, dict):
+        parsed = None
+        for candidate in _candidate_json_objects(stripped):
+            try:
+                obj = json.loads(candidate)
+                if isinstance(obj, dict):
+                    parsed = obj
+                    break
+            except json.JSONDecodeError:
+                continue
+
+    if not isinstance(parsed, dict):
+        logger.warning("No valid JSON object found in model answer: %r", raw_answer[:200])
         return dict(fallback)
     for key, value in (defaults or {}).items():
         parsed.setdefault(key, value)
