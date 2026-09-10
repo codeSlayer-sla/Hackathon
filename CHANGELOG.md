@@ -36,6 +36,7 @@ de este monorepo.
 
 ## Installed Base (Philips Challenge)
 
+- `96d4e14` 2026-09-09: `POST /extract` -- contraparte sin estado de `/capture/turn` para la app movil; cuando el telefono esta online usa el modelo que el Router tenga registrado para "completion" (potencialmente mas grande que el del telefono) en vez de extraer localmente, sin efectos de sesion/guardado ya que la app maneja todo eso por su cuenta
 - `4bb74e3` 2026-09-09: `GET /auth/roster` -- pepper + PIN hashes para que la app movil pueda validar el login offline sin PINs hardcodeados; requiere token (misma dependencia que el resto de endpoints de escritura), asi el pepper nunca queda embebido en el build de la app
 - `5bf690b` 2026-09-09: `POST /sync` -- acepta en batch la cola offline de la app movil, idempotente por (tecnico, local_id) via el mismo cache de `processed_events`
 - `0342b14` 2026-09-08: `compute_confidence` ahora factoriza la antiguedad de la observacion (se recalcula en cada lectura, no queda congelado al insertar)
