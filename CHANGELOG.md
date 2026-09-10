@@ -27,6 +27,7 @@ de este monorepo.
 
 ## Frontend
 
+- `24d7bee` 2026-09-09: pestana "Tecnicos" ahora es el dashboard de operacion completo que se pidio -- cuantos registros subio cada tecnico, badge "nodo principal" cuando el tecnico esta usando `/extract` (proceso en el nodo, no local), y tabla tecnico x pais reusando el `/analytics` que ya llamaba la pestana Analytics
 - `b6cd4dd` 2026-09-09: pestana "Tecnicos" -- registrar (nombre + PIN, `POST /technicians`) y ver ultima actividad de cada uno (verde/ambar/gris por antiguedad, "Nunca conectado" si nunca llego); registrar no requiere ningun paso de "sincronizar" aparte, el `/auth/roster` que ya existia levanta la lista actualizada solo. Tambien primer sistema de diseno compartido (`theme.ts`) -- antes cada vista tenia sus propios estilos inline sueltos; aplicado al shell de la app y a la vista nueva, el resto de las vistas queda pendiente
 - `13ec033` 2026-09-08: fix de 2 tests que rompieron al correr la suite completa (getAllByText en Analytics, mock de /analytics en App.test.tsx)
 - `1046bb0` 2026-09-08: pestanas Fotos y Consultas (antes solo existian como API), login de tecnico compartido entre pestanas via LoginGate.tsx, Analytics ahora muestra stale_customers/refresh_opportunities
@@ -37,6 +38,7 @@ de este monorepo.
 
 ## Installed Base (Philips Challenge)
 
+- `24d7bee` 2026-09-09: `AnalyticsSummary` gana `by_technician`/`by_technician_country` (agrupado por `observer`, que ya es confiable porque `/capture/turn` y `/sync` siempre lo pisan con el nombre del tecnico autenticado); `technicians` gana `last_extract_at`, actualizado desde `/extract` -- responde "ya envio procesamiento al nodo principal" en vez de solo "esta online". `Store.list_technicians_with_activity()` calcula `observation_count` con un solo join en vez de que cada consumidor arme su propio conteo
 - `46a67c5` 2026-09-09: tecnicos movidos de un dict hardcodeado en `auth.py` a una tabla SQLite real -- no habia forma de registrar uno nuevo sin editar codigo y redesplegar. `POST /technicians` (nombre+PIN) + `GET /technicians` (nunca expone PIN/hash) para el admin del frontend; `GET /auth/roster` no necesito ningun cambio, ya leia de "la lista de tecnicos que exista" y ahora esa lista es persistente y mutable. `last_seen_at` se actualiza en cada request autenticado (login/captura/sync/extract/roster) via `get_current_technician` -- visibilidad real de que apps estan hablando con este nodo, no solo un roster estatico
 - `96d4e14` 2026-09-09: `POST /extract` -- contraparte sin estado de `/capture/turn` para la app movil; cuando el telefono esta online usa el modelo que el Router tenga registrado para "completion" (potencialmente mas grande que el del telefono) en vez de extraer localmente, sin efectos de sesion/guardado ya que la app maneja todo eso por su cuenta
 - `4bb74e3` 2026-09-09: `GET /auth/roster` -- pepper + PIN hashes para que la app movil pueda validar el login offline sin PINs hardcodeados; requiere token (misma dependencia que el resto de endpoints de escritura), asi el pepper nunca queda embebido en el build de la app
