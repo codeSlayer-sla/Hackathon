@@ -2,6 +2,16 @@ import pytest
 from fastapi import HTTPException
 
 from app import auth
+from app.store import Store
+
+
+@pytest.fixture(autouse=True)
+def _seeded_store():
+    """Direct unit tests here call auth functions without going through
+    TestClient(app) (which is what normally triggers the lifespan that
+    calls auth.set_store()) -- so each test gets its own fresh, seeded,
+    in-memory store instead."""
+    auth.set_store(Store(":memory:"))
 
 
 def test_authenticate_pin_valid_returns_technician():

@@ -67,6 +67,14 @@ CREATE TABLE IF NOT EXISTS processed_events (
     response_json TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS technicians (
+    technician_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    pin_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT
+);
 """
 
 
@@ -352,5 +360,64 @@ class Store:
         self._conn.execute(
             "INSERT OR REPLACE INTO processed_events (client_event_id, response_json, created_at) VALUES (?, ?, ?)",
             (client_event_id, json.dumps(response), datetime.now(timezone.utc).isoformat()),
+        )
+        self._conn.commit()
+
+    # -- technicians --------------------------------------------------------
+    # Persistent, unlike the token store (sessions.py) which stays in-memory
+    # on purpose -- a technician's identity/PIN must survive a restart, a
+    # login token doesn't need to. seed_technicians_if_empty exists so the
+    # three demo PINs documented in the README keep working on a fresh DB
+    # without every deployment needing to register them by hand first.
+
+    def technicians_is_empty(self) -> bool:
+        cur = self._conn.execute("SELECT COUNT(*) AS n FROM technicians")
+        return cur.fetchone()["n"] == 0
+
+    def seed_technicians_if_empty(self, seed: list[tuple[str, str, str]]) -> None:
+        """`seed`: list of (technician_id, name, pin_hash) -- pin_hash
+        already hashed by the caller (auth.py owns the hashing, this module
+        never sees a raw PIN)."""
+        if not self.technicians_is_empty():
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        for technician_id, name, pin_hash in seed:
+            self._conn.execute(
+                "INSERT INTO technicians (technician_id, name, pin_hash, created_at) VALUES (?, ?, ?, ?)",
+                (technician_id, name, pin_hash, now),
+            )
+        self._conn.commit()
+
+    def insert_technician(self, technician_id: str, name: str, pin_hash: str) -> None:
+        self._conn.execute(
+            "INSERT INTO technicians (technician_id, name, pin_hash, created_at) VALUES (?, ?, ?, ?)",
+            (technician_id, name, pin_hash, datetime.now(timezone.utc).isoformat()),
+        )
+        self._conn.commit()
+
+    def list_technicians(self) -> list[dict]:
+        cur = self._conn.execute(
+            "SELECT technician_id, name, created_at, last_seen_at FROM technicians ORDER BY created_at"
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def find_technician_by_pin_hash(self, pin_hash: str) -> dict | None:
+        cur = self._conn.execute(
+            "SELECT technician_id, name FROM technicians WHERE pin_hash = ?", (pin_hash,)
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def list_technicians_for_roster(self) -> list[dict]:
+        """Unlike list_technicians(), includes pin_hash -- only ever called
+        from auth.list_roster(), which is itself gated behind an existing
+        token (see main.py's /auth/roster)."""
+        cur = self._conn.execute("SELECT technician_id, name, pin_hash FROM technicians")
+        return [dict(r) for r in cur.fetchall()]
+
+    def touch_technician_last_seen(self, technician_id: str) -> None:
+        self._conn.execute(
+            "UPDATE technicians SET last_seen_at = ? WHERE technician_id = ?",
+            (datetime.now(timezone.utc).isoformat(), technician_id),
         )
         self._conn.commit()

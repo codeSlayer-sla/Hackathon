@@ -16,6 +16,26 @@ class TechnicianAuthResponse(BaseModel):
     name: str
 
 
+class RegisterTechnicianRequest(BaseModel):
+    name: str
+    pin: str
+
+
+class RegisterTechnicianResponse(BaseModel):
+    technician_id: str
+    name: str
+
+
+class TechnicianSummary(BaseModel):
+    """Never includes a PIN or its hash -- this is what the frontend's
+    admin view lists, not what the mobile app syncs (see RosterResponse)."""
+
+    technician_id: str
+    name: str
+    created_at: str
+    last_seen_at: str | None = None
+
+
 class PhotoRecord(BaseModel):
     id: int
     photo_path: str

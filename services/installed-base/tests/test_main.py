@@ -152,6 +152,65 @@ def test_auth_roster_returns_pepper_and_pin_hashes():
         assert all(VALID_PIN not in t["pin_hash"] for t in body["technicians"])
 
 
+def test_register_technician_creates_a_working_login():
+    with TestClient(app) as client:
+        resp = client.post("/technicians", json={"name": "New Tech", "pin": "9876"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["name"] == "New Tech"
+        assert body["technician_id"].startswith("tech-")
+
+        # Immediately usable for a real login, not just a roster entry.
+        login = client.post("/auth/technician", json={"pin": "9876"})
+        assert login.status_code == 200
+        assert login.json()["name"] == "New Tech"
+
+
+def test_register_technician_rejects_duplicate_pin():
+    with TestClient(app) as client:
+        resp = client.post("/technicians", json={"name": "Someone Else", "pin": VALID_PIN})
+        assert resp.status_code == 400
+
+
+def test_register_technician_rejects_bad_pin_format():
+    with TestClient(app) as client:
+        resp = client.post("/technicians", json={"name": "Bad Pin", "pin": "12"})
+        assert resp.status_code == 400
+
+
+def test_list_technicians_includes_seed_and_new_registrations():
+    with TestClient(app) as client:
+        client.post("/technicians", json={"name": "New Tech", "pin": "9876"})
+        resp = client.get("/technicians")
+        assert resp.status_code == 200
+        names = {t["name"] for t in resp.json()}
+        assert "Field User 01" in names  # seeded
+        assert "New Tech" in names  # just registered
+        # Never leaks a PIN or its hash to the admin list view.
+        assert all("pin" not in t and "pin_hash" not in t for t in resp.json())
+
+
+def test_registered_technician_appears_in_roster_for_offline_sync():
+    with TestClient(app) as client:
+        client.post("/technicians", json={"name": "New Tech", "pin": "9876"})
+        token = _login(client)  # some other technician's own login
+        resp = client.get("/auth/roster", headers=_auth_headers(token))
+        names = {t["name"] for t in resp.json()["technicians"]}
+        assert "New Tech" in names
+
+
+def test_last_seen_is_bumped_by_authenticated_requests():
+    with TestClient(app) as client:
+        before = next(t for t in client.get("/technicians").json() if t["name"] == "Field User 01")
+        assert before["last_seen_at"] is None
+
+        token = _login(client)
+        client.get("/auth/roster", headers=_auth_headers(token))
+
+        after = next(t for t in client.get("/technicians").json() if t["name"] == "Field User 01")
+        assert after["last_seen_at"] is not None
+
+
 def test_capture_turn_requires_auth():
     with TestClient(app) as client:
         resp = client.post("/capture/turn", json={"text": "hola"})

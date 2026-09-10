@@ -26,12 +26,15 @@ from .schemas import (
     ExtractionResultSchema,
     PhotoRecord,
     PhotoValidateRequest,
+    RegisterTechnicianRequest,
+    RegisterTechnicianResponse,
     RosterResponse,
     SyncAcceptedItem,
     SyncRequest,
     SyncResponse,
     TechnicianAuthRequest,
     TechnicianAuthResponse,
+    TechnicianSummary,
 )
 from .seed_data import SEED_OBSERVATIONS
 from .sessions import sessions
@@ -73,6 +76,7 @@ async def lifespan(app: FastAPI):
     if store.is_empty():
         store.seed(SEED_OBSERVATIONS)
         logger.info("Seeded %d demo observations", len(SEED_OBSERVATIONS))
+    auth.set_store(store)
     photo_task = asyncio.create_task(_photo_processing_loop())
     yield
     photo_task.cancel()
@@ -190,6 +194,30 @@ async def auth_roster(technician: tuple[str, str] = Depends(auth.get_current_tec
     least once can pull it -- refresh this right after login and whenever
     the app is online, not on-demand when already offline."""
     return RosterResponse.model_validate(auth.list_roster())
+
+
+@app.post("/technicians", response_model=RegisterTechnicianResponse)
+async def register_technician(request: RegisterTechnicianRequest) -> RegisterTechnicianResponse:
+    """Frontend admin view calls this to add a technician. No admin auth of
+    its own (see auth.py's module docstring) -- anyone who can reach this
+    service can register one, an accepted MVP simplification. Once
+    registered, the technician's own phone picks up the new PIN the next
+    time it hits GET /auth/roster (right after its own login, or whenever
+    SyncScreen finds the server online) -- no separate "push" step needed."""
+    try:
+        technician_id, name = auth.register_technician(request.name, request.pin)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RegisterTechnicianResponse(technician_id=technician_id, name=name)
+
+
+@app.get("/technicians", response_model=list[TechnicianSummary])
+async def list_technicians() -> list[TechnicianSummary]:
+    """Backs the frontend's technician admin view -- who's registered, and
+    last_seen_at (bumped on every authenticated request, see
+    auth.get_current_technician) as a real signal of which phones are
+    actually talking to this node, not just who exists."""
+    return [TechnicianSummary.model_validate(t) for t in auth.list_technicians()]
 
 
 @app.post("/capture/turn", response_model=CaptureTurnResponse)
