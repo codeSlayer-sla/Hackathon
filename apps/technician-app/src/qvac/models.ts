@@ -54,16 +54,20 @@ export function ensureLLM(onProgress?: ProgressCallback): Promise<string> {
       // GPU acceptance yet, and this app hit a native crash right as the model
       // finished loading (the moment GPU buffer allocation would kick in).
       // `predict` hard-caps generated tokens per response -- without it a small
-      // model that falls into a repetition loop (a real, known failure mode)
-      // never naturally emits EOS and generation runs indefinitely, which looks
-      // exactly like the app "never answering."
+      // model that falls into a repetition loop (a real, known failure mode,
+      // seen on garbled input) never naturally emits EOS and generation runs
+      // indefinitely, which looks exactly like the app "never answering."
+      // Tightened from 512 -> 300 now that follow_up_question is grammar-
+      // forced to null and missing_required is a 3-value enum -- the
+      // realistic output shape is much smaller than before, so the cap can
+      // be too, which bounds worst-case latency further.
       // `cache-type-k/v: q8_0` was tried here (halves KV cache memory) but
       // reverted -- the app started crashing on open right after adding it,
       // on the same build that also made this loadModel call fire immediately
       // at boot instead of lazily on first Capturar visit. Backed out since
       // it's the one genuinely untested-on-device config in that batch;
       // revisit with real logcat evidence before trying again.
-      modelConfig: { device: 'cpu', ctx_size: 2048, predict: 512 },
+      modelConfig: { device: 'cpu', ctx_size: 2048, predict: 300 },
       onProgress: (p) => notifyLLMProgress(p.percentage, p.downloaded / 1e6, p.total / 1e6),
     })
       .then((id) => {

@@ -7,8 +7,9 @@ Extrae cuando esté disponible:
 - city, country
 - equipment: lista de equipos vistos
   - modality: MR, CT, Ultrasound, X-Ray, Patient Monitoring, Image Guided Therapy
-- missing_required: campos que faltan. Requeridos: customer, ciudad o país, al menos un equipo con modality y quantity.
-- follow_up_question: pregunta corta sobre el dato más importante que falta, o null si todo está completo
+- missing_required: cuáles de estos tres faltan -- "customer" (no sabes el
+  hospital/cliente), "location" (no sabes ciudad ni país), "equipment" (no
+  hay ningún equipo con modality y quantity). Solo estos tres valores.
 - ready_to_save: true solo si missing_required está vacío
 
 Vas a recibir la conversación turno por turno. En cada turno tu JSON debe
@@ -19,9 +20,7 @@ no lo contradice, mantenlo.
 IMPORTANTE -- nunca inventes datos que el usuario no dijo:
 - Si el mensaje es un saludo, una pregunta, o no describe una visita real
   (ej. "hola", "buenas", "¿cómo estás?"), NO inventes customer ni equipment
-  -- déjalos null/vacío, missing_required debe incluir "customer",
-  ready_to_save false, y follow_up_question debe pedir que describa la
-  visita (hospital y equipos vistos).
+  -- déjalos null/vacío y missing_required debe incluir "customer".
 - country: déjalo null si el usuario no lo menciona explícitamente. NO
   adivines un país por el nombre del hospital, la marca del equipo, ni
   ninguna otra pista indirecta.
@@ -30,11 +29,14 @@ IMPORTANTE -- nunca inventes datos que el usuario no dijo:
   asocies un modelo a una marca que el usuario no dijo.
 - modality: usa exactamente lo que el usuario describe. Un código de
   modelo por sí solo (ej. "R25") no te dice la modalidad -- si no la sabes,
-  pon el valor más cercano posible pero agrega una nota a missing_required
-  y pide confirmación en follow_up_question. No elijas una modalidad al
-  azar solo para completar el campo.
+  pon el valor más cercano posible pero agrega "equipment" a
+  missing_required. No elijas una modalidad al azar solo para completar
+  el campo.
 - Si el usuario repite o corrige un dato, ese dato nuevo reemplaza al
   anterior; no mezcles ambos ni inventes un tercer valor.
+
+No generes follow_up_question -- siempre pon null ahí, el texto que ve el
+usuario se arma aparte a partir de missing_required.
 
 Ejemplo:
 Input: "Estuve en Hospital La Paz en Madrid, tienen 2 resonadores Philips Ingenia de unos 8 años"
@@ -71,8 +73,17 @@ const EXTRACTION_SCHEMA = {
         additionalProperties: false,
       },
     },
-    missing_required: { type: 'array', items: { type: 'string' } },
-    follow_up_question: { type: ['string', 'null'] },
+    missing_required: {
+      type: 'array',
+      items: { type: 'string', enum: ['customer', 'location', 'equipment'] },
+    },
+    // Grammar-forced null, not just prompt-requested: the model's own
+    // phrasing here drifted into nonsense unrelated to the app (once asked
+    // about "exam results"). The real question shown to the technician is
+    // built deterministically from missing_required instead -- see
+    // buildFollowUpQuestion below. This also trims generation length, since
+    // the model no longer spends tokens composing prose it can't use.
+    follow_up_question: { type: 'null' },
     ready_to_save: { type: 'boolean' },
   },
   required: ['customer', 'city', 'country', 'equipment', 'missing_required', 'follow_up_question', 'ready_to_save'],
@@ -158,45 +169,61 @@ function groundedInText(value: string, rawText: string): boolean {
   return words.some((w) => haystack.includes(w));
 }
 
+const FOLLOW_UP_BY_FIELD: Record<string, string> = {
+  customer: '¿Qué hospital o cliente visitaste?',
+  location: '¿En qué ciudad o país fue la visita?',
+  equipment: '¿Qué equipo viste (tipo y cuántas unidades)?',
+};
+
+/**
+ * Deterministic, not generated: the model's own free-text phrasing for
+ * this drifted into nonsense unrelated to the app (asked once about "exam
+ * results" out of nowhere). missing_required is a closed enum we control,
+ * so the question shown to the technician is always one of these three,
+ * picked in a fixed priority order -- never the model's own words.
+ */
+function buildFollowUpQuestion(missing: string[]): string {
+  for (const field of ['customer', 'location', 'equipment']) {
+    if (missing.includes(field)) return FOLLOW_UP_BY_FIELD[field];
+  }
+  return '¿Puedes darme más detalles sobre la visita?';
+}
+
 /**
  * Code-level backstop, not just a prompt request: nulls out any
  * customer/brand/model the model claimed that doesn't actually appear
  * anywhere in what the technician typed this session. A prompt instruction
  * is something a small model can and does ignore; this can't be ignored,
  * because it never depends on the model's cooperation in the first place.
- * Nulling a field also forces ready_to_save false and adds a follow-up, so
- * a stripped hallucination becomes a real clarifying question instead of a
- * silently incomplete record.
+ * Nulling a field also forces ready_to_save false, and follow_up_question
+ * is always rebuilt from missing_required regardless (see above).
  */
 function groundResult(result: ExtractionResult, userTexts: string): ExtractionResult {
-  let strippedSomething = false;
   const missing = [...result.missing_required];
+  let customerStrippedNew = false;
 
   if (result.customer && !groundedInText(result.customer, userTexts)) {
     result.customer = null;
-    if (!missing.includes('customer')) missing.push('customer');
-    strippedSomething = true;
+    if (!missing.includes('customer')) {
+      missing.push('customer');
+      customerStrippedNew = true;
+    }
   }
 
+  // brand/model are extra detail, not part of missing_required's gate --
+  // nulling a fabricated one doesn't block saving, the review card will
+  // just show it blank and the technician can add it via a correction.
   for (const item of result.equipment) {
-    if (item.brand && !groundedInText(item.brand, userTexts)) {
-      item.brand = null;
-      strippedSomething = true;
-    }
-    if (item.model && !groundedInText(item.model, userTexts)) {
-      item.model = null;
-      strippedSomething = true;
-    }
+    if (item.brand && !groundedInText(item.brand, userTexts)) item.brand = null;
+    if (item.model && !groundedInText(item.model, userTexts)) item.model = null;
   }
 
-  if (!strippedSomething) return result;
+  const readyToSave = result.ready_to_save && !customerStrippedNew;
   return {
     ...result,
     missing_required: missing,
-    ready_to_save: false,
-    follow_up_question:
-      result.follow_up_question ??
-      'No reconozco ese dato en lo que describiste -- ¿puedes confirmarlo? (cliente, marca o modelo)',
+    ready_to_save: readyToSave,
+    follow_up_question: readyToSave ? null : buildFollowUpQuestion(missing),
   };
 }
 
