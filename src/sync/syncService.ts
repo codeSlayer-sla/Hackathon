@@ -1,7 +1,29 @@
-import { listPendingSync, markSynced, markSyncFailed } from '../db/database';
+import { cacheRoster, listPendingSync, markSynced, markSyncFailed } from '../db/database';
+import { getServerUrl } from '../config/serverConfig';
 
-// Change this to your Philips on-premise server URL
-const PHILIPS_SERVER = process.env.EXPO_PUBLIC_PHILIPS_SERVER ?? 'http://192.168.1.100:8005';
+/**
+ * Refreshes the local PIN-hash + pepper cache used for offline login.
+ * Best-effort: called right after a successful online login and whenever
+ * SyncScreen finds the server reachable. Never blocks the caller on
+ * failure -- an offline login simply falls back to whatever was cached
+ * last, or fails if nothing was ever cached.
+ */
+export async function refreshRoster(token: string): Promise<boolean> {
+  const server = await getServerUrl();
+  if (!server) return false;
+  try {
+    const resp = await fetch(`${server}/auth/roster`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!resp.ok) return false;
+    const body = await resp.json();
+    await cacheRoster(body.pepper, body.technicians);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export interface SyncResult {
   pushed: number;
@@ -14,11 +36,16 @@ export async function syncToServer(token: string): Promise<SyncResult> {
   const pending = await listPendingSync();
   if (pending.length === 0) return { pushed: 0, accepted: 0, failed: 0 };
 
+  const server = await getServerUrl();
+  if (!server) {
+    return { pushed: 0, accepted: 0, failed: 0, error: 'No hay servidor configurado.' };
+  }
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15_000);
 
-    const resp = await fetch(`${PHILIPS_SERVER}/sync`, {
+    const resp = await fetch(`${server}/sync`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -66,10 +93,12 @@ export async function syncToServer(token: string): Promise<SyncResult> {
 }
 
 export async function isServerReachable(): Promise<boolean> {
+  const server = await getServerUrl();
+  if (!server) return false;
   try {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 5_000);
-    const resp = await fetch(`${PHILIPS_SERVER}/health`, { signal: controller.signal });
+    const resp = await fetch(`${server}/health`, { signal: controller.signal });
     return resp.ok;
   } catch {
     return false;

@@ -3,22 +3,27 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import * as Crypto from 'expo-crypto';
+import { findCachedTechnicianByPinHash, getCachedPepper } from '../db/database';
+import { refreshRoster } from '../sync/syncService';
+import { getServerUrl } from '../config/serverConfig';
 
 interface Props {
   onLogin: (token: string, name: string) => void;
+  onEditServer: () => void;
 }
 
-// PINs demo: 1234 / 2345 / 3456
-// When online: calls Philips server. Offline: accepts demo PINs locally.
-const OFFLINE_PINS: Record<string, string> = {
-  '1234': 'Field User 01',
-  '2345': 'Sales User 02',
-  '3456': 'Field User 03',
+// Last-resort fallback ONLY for a device that has never once reached the
+// server (getCachedPepper() returns null) -- e.g. first run, no connectivity
+// yet. The moment a real roster is cached, this is never consulted again;
+// it never overrides or bypasses cached data.
+const BOOTSTRAP_PINS: Record<string, { technician_id: string; name: string }> = {
+  '1234': { technician_id: 'tech-01', name: 'Field User 01' },
+  '2345': { technician_id: 'tech-02', name: 'Sales User 02' },
+  '3456': { technician_id: 'tech-03', name: 'Field User 03' },
 };
 
-const PHILIPS_SERVER = process.env.EXPO_PUBLIC_PHILIPS_SERVER ?? 'http://192.168.1.100:8005';
-
-export default function LoginScreen({ onLogin }: Props) {
+export default function LoginScreen({ onLogin, onEditServer }: Props) {
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -29,8 +34,10 @@ export default function LoginScreen({ onLogin }: Props) {
     setError('');
 
     // Try server first
+    const server = await getServerUrl();
     try {
-      const resp = await fetch(`${PHILIPS_SERVER}/auth/technician`, {
+      if (!server) throw new Error('no server configured');
+      const resp = await fetch(`${server}/auth/technician`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin }),
@@ -38,6 +45,9 @@ export default function LoginScreen({ onLogin }: Props) {
       });
       if (resp.ok) {
         const data = await resp.json();
+        // Best-effort: refresh the offline login cache now that we have a
+        // valid token, so a later offline login has fresh PIN hashes.
+        refreshRoster(data.token);
         onLogin(data.token, data.name);
         return;
       }
@@ -46,10 +56,27 @@ export default function LoginScreen({ onLogin }: Props) {
       // server unreachable — fall through to offline mode
     }
 
-    // Offline fallback
-    const name = OFFLINE_PINS[pin];
-    if (name) {
-      onLogin(`offline-${pin}-${Date.now()}`, `${name} (offline)`);
+    // Offline fallback: hash the entered PIN with the last-cached pepper and
+    // compare against the last-cached roster (populated on a previous online
+    // login).
+    const pepper = await getCachedPepper();
+    if (!pepper) {
+      // Never synced even once -- last resort so the demo isn't dead in the
+      // water on a fresh install with no connectivity. Only reachable here,
+      // never once a real roster exists.
+      const bootstrap = BOOTSTRAP_PINS[pin];
+      if (bootstrap) {
+        onLogin(`offline-${bootstrap.technician_id}-${Date.now()}`, `${bootstrap.name} (offline-fallback)`);
+      } else {
+        setError('Sin conexión al servidor y sin datos guardados para modo offline. Inicia sesión online al menos una vez.');
+      }
+      setLoading(false);
+      return;
+    }
+    const pinHash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `${pin}${pepper}`);
+    const technician = await findCachedTechnicianByPinHash(pinHash);
+    if (technician) {
+      onLogin(`offline-${technician.technician_id}-${Date.now()}`, `${technician.name} (offline)`);
     } else {
       setError('PIN incorrecto (sin conexión al servidor)');
     }
@@ -87,6 +114,10 @@ export default function LoginScreen({ onLogin }: Props) {
         </TouchableOpacity>
 
         <Text style={styles.hint}>Demo: 1234 · 2345 · 3456</Text>
+
+        <TouchableOpacity onPress={onEditServer} style={styles.serverLink}>
+          <Text style={styles.serverLinkText}>⚙ Configurar servidor</Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
@@ -104,4 +135,6 @@ const styles = StyleSheet.create({
   btn: { backgroundColor: '#1F5EAA', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   hint: { color: '#4a5568', fontSize: 12, textAlign: 'center', marginTop: 20 },
+  serverLink: { marginTop: 16, alignItems: 'center' },
+  serverLinkText: { color: '#4a5568', fontSize: 12 },
 });

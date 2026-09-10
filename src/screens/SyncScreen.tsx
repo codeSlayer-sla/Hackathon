@@ -1,8 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { countPending } from '../db/database';
-import { syncToServer, isServerReachable, type SyncResult } from '../sync/syncService';
+import { syncToServer, isServerReachable, refreshRoster, type SyncResult } from '../sync/syncService';
 
 interface Props { token: string; }
 
@@ -12,16 +11,17 @@ export default function SyncScreen({ token }: Props) {
   const [syncing, setSyncing] = useState(false);
   const [lastResult, setLastResult] = useState<SyncResult | null>(null);
 
-  useFocusEffect(
-    useCallback(() => {
-      refresh();
-    }, [])
-  );
+  useEffect(() => {
+    refresh();
+  }, []);
 
   async function refresh() {
     const [count, online] = await Promise.all([countPending(), isServerReachable()]);
     setPending(count);
     setServerOnline(online);
+    if (online && !token.startsWith('offline-')) {
+      refreshRoster(token);
+    }
   }
 
   async function doSync() {
