@@ -46,6 +46,7 @@ de este monorepo.
 
 ## Shared / Infra
 
+- `b77aa46` 2026-09-09: `peer-medium`/`peer-gpu` pasan de `LLAMA_3_2_1B_INST_Q4_0` (mismo modelo que el telefono) a `MEDGEMMA_4B_IT_Q4_1` -- para que el nuevo `/extract` de la app movil (prefiere el nodo principal cuando esta online) realmente entregue un modelo mejor, no el mismo. MedGemma elegido por dominio (equipos medicos), verificado como constante real en el SDK instalado; riesgo conocido sin verificar en hardware real: esta afinado para QA clinico, no necesariamente para JSON estricto -- `QWEN3_4B_INST_Q4_K_M` (tambien verificado) es el fallback de una linea
 - `3e68ebc` 2026-09-09: README raiz actualizado -- la referencia a `technician-app` seguia describiendo el smoke test original, varios commits despues de haber sido reemplazado por el flujo real
 - `867a6e2` 2026-09-09: `run_tests.py` -- `technician-app` corria `npm test`, que falla ahora mismo (no existe ese script desde que se reemplazo el smoke test); corre `npm run typecheck` en su lugar
 - `30c7a72` 2026-09-08: `apps/technician-app` cableado en `scripts/run_tests.py` + README/CHANGELOG actualizados para reflejar la app movil real (Expo/React Native)
