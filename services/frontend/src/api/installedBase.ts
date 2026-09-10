@@ -7,7 +7,9 @@ import type {
   NaturalLanguageQueryResponse,
   PhotoRecord,
   PhotoValidateRequest,
+  RegisterTechnicianResponse,
   TechnicianAuthResponse,
+  TechnicianSummary,
 } from "@shared/types";
 
 const INSTALLED_BASE_URL =
@@ -100,6 +102,26 @@ export async function validatePhoto(
   });
   if (!res.ok) {
     throw new Error(`/photos/${photoId}/validate failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json();
+}
+
+export async function registerTechnician(name: string, pin: string): Promise<RegisterTechnicianResponse> {
+  const res = await fetch(`${INSTALLED_BASE_URL}/technicians`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, pin }),
+  });
+  if (!res.ok) {
+    throw new Error((await res.json().catch(() => null))?.detail ?? `/technicians failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function listTechnicians(): Promise<TechnicianSummary[]> {
+  const res = await fetch(`${INSTALLED_BASE_URL}/technicians`);
+  if (!res.ok) {
+    throw new Error(`/technicians failed: ${res.status}`);
   }
   return res.json();
 }

@@ -125,6 +125,11 @@ export interface AnalyticsSummary {
   by_modality: Record<string, number>;
   by_country: Record<string, number>;
   by_status: Record<string, number>;
+  // Keyed by technician name (EquipmentObservation.observer), not
+  // technician_id -- lets the ops dashboard group uploads by who reported
+  // them without a separate join.
+  by_technician: Record<string, number>;
+  by_technician_country: Record<string, Record<string, number>>;
   average_age_years?: number;
   aging_customers: string[];
   incomplete_customers: string[];
@@ -138,6 +143,25 @@ export interface TechnicianAuthResponse {
   token: string;
   technician_id: string;
   name: string;
+}
+
+export interface RegisterTechnicianRequest {
+  name: string;
+  pin: string;
+}
+
+export interface RegisterTechnicianResponse {
+  technician_id: string;
+  name: string;
+}
+
+export interface TechnicianSummary {
+  technician_id: string;
+  name: string;
+  created_at: string;
+  last_seen_at?: string;
+  last_extract_at?: string;
+  observation_count: number;
 }
 
 export interface PhotoRecord {

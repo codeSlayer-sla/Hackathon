@@ -8,5 +8,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 .env
+.env.node-b
+.env.node-c
 qvac-models/
 .DS_Store

@@ -225,6 +225,11 @@ class AnalyticsSummary(BaseModel):
     by_modality: dict[str, int] = Field(default_factory=dict)
     by_country: dict[str, int] = Field(default_factory=dict)
     by_status: dict[str, int] = Field(default_factory=dict)
+    # Keyed by technician name (EquipmentObservation.observer), not
+    # technician_id -- the frontend's ops dashboard groups uploaded records
+    # by who reported them without a separate join.
+    by_technician: dict[str, int] = Field(default_factory=dict)
+    by_technician_country: dict[str, dict[str, int]] = Field(default_factory=dict)
     average_age_years: float | None = None
     aging_customers: list[str] = Field(default_factory=list)
     incomplete_customers: list[str] = Field(default_factory=list)

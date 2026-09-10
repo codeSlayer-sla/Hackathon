@@ -41,6 +41,12 @@ MODULES: dict[str, dict] = {
         "cwd": ROOT / "services" / "installed-base",
     },
     "frontend": {"cmd": [NPM, "test"], "cwd": ROOT / "services" / "frontend"},
+    # No test suite exists for technician-app right now (dropped when the
+    # smoke-test UI was replaced by the real capture flow -- see its
+    # CHANGELOG.md, entry 3cb0645). typecheck is the only automated check
+    # available until that suite gets rebuilt; running `npm test` here would
+    # just fail on a missing script.
+    "technician-app": {"cmd": [NPM, "run", "typecheck"], "cwd": ROOT / "apps" / "technician-app"},
 }
 
 

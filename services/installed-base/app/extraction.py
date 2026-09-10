@@ -35,7 +35,10 @@ Extract, when known:
   - modality: a short label such as MR, CT, Ultrasound, X-Ray, Patient Monitoring, Image Guided Therapy
   - confidence: "high" | "medium" | "low" based on how certain the speaker sounds
   - status: "reported" (stated as directly observed fact), "estimated" (a guess, e.g. approximate age), or "unknown" (not stated)
-- missing_required: which required fields are still missing. Required: customer, at least one of city/country, and at least one equipment entry with modality and quantity.
+- missing_required: which of exactly three keys are still missing --
+  "customer" (hospital/facility not known), "location" (neither city nor
+  country known), "equipment" (no equipment entry with modality and
+  quantity yet). No other values.
 - follow_up_question: one short natural question asking for the single most valuable missing piece of information, or null if nothing required is missing
 - ready_to_save: true only if missing_required is empty
 
@@ -48,7 +51,7 @@ JSON: {"customer": "Hospital DemoCare Pacific", "city": null, "country": "Panama
 
 Example 2
 User: "They have two CTs."
-JSON: {"customer": null, "city": null, "country": null, "equipment": [{"modality": "CT", "quantity": 2, "brand": null, "model": null, "approx_age_years": null, "confidence": "low", "status": "reported"}], "missing_required": ["customer", "city_or_country"], "follow_up_question": "Which hospital or customer is this, and in what city or country?", "ready_to_save": false}
+JSON: {"customer": null, "city": null, "country": null, "equipment": [{"modality": "CT", "quantity": 2, "brand": null, "model": null, "approx_age_years": null, "confidence": "low", "status": "reported"}], "missing_required": ["customer", "location"], "follow_up_question": "Which hospital or customer is this, and in what city or country?", "ready_to_save": false}
 
 Conversation so far (most recent last):
 """

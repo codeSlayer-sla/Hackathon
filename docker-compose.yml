@@ -31,7 +31,7 @@ services:
       NODE_ID: peer-medium
       ROLE: medium_provider
       MODEL_TIER: medium
-      MODEL_NAME: LLAMA_3_2_1B_INST_Q4_0
+      MODEL_NAME: MEDGEMMA_4B_IT_Q4_1
       PRICE_PER_1K_TOKENS: "0"
       ROUTER_URL: http://router:8000
       PORT: "8000"
@@ -50,10 +50,21 @@ services:
       NODE_ID: peer-gpu
       ROLE: large_provider
       MODEL_TIER: large
-      # Same small model as peer-medium for now so the baseline boots without
-      # a big GPU download; swap for a real large model + GPU config once
-      # the GPU/Large workstream task is assigned.
-      MODEL_NAME: LLAMA_3_2_1B_INST_Q4_0
+      # Same model as peer-medium on purpose, not a placeholder: both must
+      # match, since the Router picks whichever "completion" peer registered
+      # first (no tier preference in pick_by_capability) -- running two
+      # peers with different models here would make which one actually
+      # answers nondeterministic. Swap for a real large model + GPU config
+      # once there's an actual GPU to put behind peer-gpu specifically.
+      #
+      # MedGemma over a general instruct model on purpose: the domain here
+      # is medical equipment (MR/CT/Ultrasound/etc.), which is exactly
+      # MedGemma's tuning target. Caveat -- it's tuned for clinical text
+      # QA, not necessarily strict JSON-schema output the way an instruct
+      # model is; if it doesn't reliably follow "respond with only this
+      # JSON shape" (see services/installed-base/app/extraction.py), swap
+      # back to QWEN3_4B_INST_Q4_K_M, a one-line change.
+      MODEL_NAME: MEDGEMMA_4B_IT_Q4_1
       PRICE_PER_1K_TOKENS: "0.003"
       ROUTER_URL: http://router:8000
       PORT: "8000"

@@ -1,0 +1,37 @@
+{
+  "name": "technician-app",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/patch-rn-screens.js"
+  },
+  "dependencies": {
+    "@qvac/sdk": "^0.19.0",
+    "bare-rpc": "^1.3.8",
+    "expo": "~54.0.36",
+    "expo-av": "~16.0.8",
+    "expo-build-properties": "~1.0.10",
+    "expo-camera": "~17.0.10",
+    "expo-crypto": "~15.0.9",
+    "expo-device": "~8.0.10",
+    "expo-file-system": "~19.0.24",
+    "expo-sqlite": "~16.0.10",
+    "expo-status-bar": "~3.0.9",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-bare-kit": "^0.11.5",
+    "react-native-safe-area-context": "^5.9.1",
+    "react-native-screens": "^4.11.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.0",
+    "bare-pack": "^2.2.2",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}

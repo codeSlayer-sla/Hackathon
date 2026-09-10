@@ -1,0 +1,106 @@
+import { cacheRoster, listPendingSync, markSynced, markSyncFailed } from '../db/database';
+import { getServerUrl } from '../config/serverConfig';
+
+/**
+ * Refreshes the local PIN-hash + pepper cache used for offline login.
+ * Best-effort: called right after a successful online login and whenever
+ * SyncScreen finds the server reachable. Never blocks the caller on
+ * failure -- an offline login simply falls back to whatever was cached
+ * last, or fails if nothing was ever cached.
+ */
+export async function refreshRoster(token: string): Promise<boolean> {
+  const server = await getServerUrl();
+  if (!server) return false;
+  try {
+    const resp = await fetch(`${server}/auth/roster`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!resp.ok) return false;
+    const body = await resp.json();
+    await cacheRoster(body.pepper, body.technicians);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface SyncResult {
+  pushed: number;
+  accepted: number;
+  failed: number;
+  error?: string;
+}
+
+export async function syncToServer(token: string): Promise<SyncResult> {
+  const pending = await listPendingSync();
+  if (pending.length === 0) return { pushed: 0, accepted: 0, failed: 0 };
+
+  const server = await getServerUrl();
+  if (!server) {
+    return { pushed: 0, accepted: 0, failed: 0, error: 'No hay servidor configurado.' };
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+
+    const resp = await fetch(`${server}/sync`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        pending_observations: pending.map((o) => ({
+          local_id: o.id,
+          customer: o.customer,
+          city: o.city,
+          country: o.country,
+          modality: o.modality,
+          quantity: o.quantity,
+          brand: o.brand,
+          model: o.model,
+          approx_age_years: o.approx_age_years,
+          confidence: o.confidence,
+          status: o.status,
+          source: o.source,
+          observer: o.observer,
+          visit_date: o.visit_date,
+        })),
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!resp.ok) {
+      await markSyncFailed(pending.map((o) => o.id));
+      return { pushed: pending.length, accepted: 0, failed: pending.length, error: `HTTP ${resp.status}` };
+    }
+
+    const body = await resp.json();
+    const acceptedIds: number[] = (body.accepted ?? []).map((a: any) => a.local_id ?? a).filter(Number.isInteger);
+    const failedIds = pending.map((o) => o.id).filter((id) => !acceptedIds.includes(id));
+
+    if (acceptedIds.length > 0) await markSynced(acceptedIds);
+    if (failedIds.length > 0) await markSyncFailed(failedIds);
+
+    return { pushed: pending.length, accepted: acceptedIds.length, failed: failedIds.length };
+  } catch (err: any) {
+    await markSyncFailed(pending.map((o) => o.id));
+    return { pushed: pending.length, accepted: 0, failed: pending.length, error: err.message };
+  }
+}
+
+export async function isServerReachable(): Promise<boolean> {
+  const server = await getServerUrl();
+  if (!server) return false;
+  try {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 5_000);
+    const resp = await fetch(`${server}/health`, { signal: controller.signal });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}

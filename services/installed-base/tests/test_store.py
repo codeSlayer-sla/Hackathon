@@ -109,6 +109,39 @@ def test_analytics_refresh_opportunities_reflect_aging_customers():
     assert "CT" in analytics.refresh_opportunities[0].reason
 
 
+def test_analytics_groups_by_technician_and_country():
+    store = Store(":memory:")
+    store.insert(_obs(customer="Hospital Alpha", country="Panama", observer="Field User 01"))
+    store.insert(_obs(customer="Hospital Beta", country="Panama", observer="Field User 01"))
+    store.insert(_obs(customer="Hospital Gamma", country="Colombia", observer="Sales User 02"))
+    store.insert(_obs(customer="Hospital Delta", country=None, observer=None))
+    analytics = store.compute_analytics()
+    assert analytics.by_technician == {"Field User 01": 2, "Sales User 02": 1}
+    assert analytics.by_technician_country == {
+        "Field User 01": {"Panama": 2},
+        "Sales User 02": {"Colombia": 1},
+    }
+
+
+def test_list_technicians_with_activity_includes_observation_count():
+    store = Store(":memory:")
+    store.insert_technician("tech-01", "Field User 01", "hash-1")
+    store.insert(_obs(observer="Field User 01"))
+    store.insert(_obs(observer="Field User 01", customer="Hospital Beta"))
+    rows = store.list_technicians_with_activity()
+    assert len(rows) == 1
+    assert rows[0]["observation_count"] == 2
+    assert rows[0]["last_extract_at"] is None
+
+
+def test_touch_technician_last_extract_sets_timestamp():
+    store = Store(":memory:")
+    store.insert_technician("tech-01", "Field User 01", "hash-1")
+    store.touch_technician_last_extract("tech-01")
+    rows = store.list_technicians_with_activity()
+    assert rows[0]["last_extract_at"] is not None
+
+
 # -- compute_confidence -------------------------------------------------
 
 

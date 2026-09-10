@@ -22,10 +22,19 @@ from qvac_mesh_shared.config import NodeSettings
 
 from . import auth, extraction
 from .schemas import (
+    ExtractRequest,
+    ExtractionResultSchema,
     PhotoRecord,
     PhotoValidateRequest,
+    RegisterTechnicianRequest,
+    RegisterTechnicianResponse,
+    RosterResponse,
+    SyncAcceptedItem,
+    SyncRequest,
+    SyncResponse,
     TechnicianAuthRequest,
     TechnicianAuthResponse,
+    TechnicianSummary,
 )
 from .seed_data import SEED_OBSERVATIONS
 from .sessions import sessions
@@ -67,6 +76,7 @@ async def lifespan(app: FastAPI):
     if store.is_empty():
         store.seed(SEED_OBSERVATIONS)
         logger.info("Seeded %d demo observations", len(SEED_OBSERVATIONS))
+    auth.set_store(store)
     photo_task = asyncio.create_task(_photo_processing_loop())
     yield
     photo_task.cancel()
@@ -177,6 +187,39 @@ async def authenticate(request: TechnicianAuthRequest) -> TechnicianAuthResponse
     return TechnicianAuthResponse(token=token, technician_id=technician_id, name=name)
 
 
+@app.get("/auth/roster", response_model=RosterResponse)
+async def auth_roster(technician: tuple[str, str] = Depends(auth.get_current_technician)) -> RosterResponse:
+    """PIN hashes + pepper for the technician app's offline-login cache.
+    Requires a valid token, so only someone who already logged in online at
+    least once can pull it -- refresh this right after login and whenever
+    the app is online, not on-demand when already offline."""
+    return RosterResponse.model_validate(auth.list_roster())
+
+
+@app.post("/technicians", response_model=RegisterTechnicianResponse)
+async def register_technician(request: RegisterTechnicianRequest) -> RegisterTechnicianResponse:
+    """Frontend admin view calls this to add a technician. No admin auth of
+    its own (see auth.py's module docstring) -- anyone who can reach this
+    service can register one, an accepted MVP simplification. Once
+    registered, the technician's own phone picks up the new PIN the next
+    time it hits GET /auth/roster (right after its own login, or whenever
+    SyncScreen finds the server online) -- no separate "push" step needed."""
+    try:
+        technician_id, name = auth.register_technician(request.name, request.pin)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RegisterTechnicianResponse(technician_id=technician_id, name=name)
+
+
+@app.get("/technicians", response_model=list[TechnicianSummary])
+async def list_technicians() -> list[TechnicianSummary]:
+    """Backs the frontend's technician admin view -- who's registered, and
+    last_seen_at (bumped on every authenticated request, see
+    auth.get_current_technician) as a real signal of which phones are
+    actually talking to this node, not just who exists."""
+    return [TechnicianSummary.model_validate(t) for t in auth.list_technicians()]
+
+
 @app.post("/capture/turn", response_model=CaptureTurnResponse)
 async def capture_turn(
     request: CaptureTurnRequest, technician: tuple[str, str] = Depends(auth.get_current_technician)
@@ -192,6 +235,26 @@ async def capture_turn(
     if request.client_event_id:
         store.cache_response(request.client_event_id, response.model_dump(mode="json"))
     return response
+
+
+@app.post("/extract", response_model=ExtractionResultSchema)
+async def extract(
+    request: ExtractRequest, technician: tuple[str, str] = Depends(auth.get_current_technician)
+) -> ExtractionResultSchema:
+    """Stateless counterpart to the technician app's on-device extraction.
+    When the phone is online, it sends its own transcript here instead of
+    running locally -- same Router-mediated extraction /capture/turn uses,
+    just without any session/save side effects, since the app already owns
+    all of that itself. Which peer actually answers (and therefore how big
+    a model this runs) is whatever the Router has registered for
+    "completion" -- see docs/multi-host-demo.md for pointing this node's
+    peer at a bigger model than the phone can run."""
+    try:
+        extracted = await extraction.extract_from_transcript(settings.router_url, request.transcript)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    auth.mark_used_remote_extraction(technician[0])
+    return ExtractionResultSchema.model_validate(extracted)
 
 
 @app.post("/capture/turn/voice", response_model=CaptureTurnResponse)
@@ -290,6 +353,47 @@ async def validate_photo(
     if request.client_event_id:
         store.cache_response(request.client_event_id, observation.model_dump(mode="json"))
     return observation
+
+
+@app.post("/sync", response_model=SyncResponse)
+async def sync(
+    request: SyncRequest, technician: tuple[str, str] = Depends(auth.get_current_technician)
+) -> SyncResponse:
+    """Batch-accepts the technician app's offline SQLite queue. Equipment is
+    already structured (extracted on-device before saving locally), so this
+    just persists it -- no Router/extraction call needed. Idempotent per
+    (technician, local_id): a retried sync after a dropped connection replays
+    the same accepted ids instead of duplicating observations."""
+    _, name = technician
+    accepted: list[SyncAcceptedItem] = []
+    for item in request.pending_observations:
+        client_event_id = f"mobile-sync-{name}-{item.local_id}"
+        cached = store.get_cached_response(client_event_id)
+        if cached is not None:
+            accepted.append(SyncAcceptedItem(local_id=item.local_id, observation_id=cached["observation_id"]))
+            continue
+
+        observation = store.insert(
+            EquipmentObservation(
+                customer=item.customer,
+                city=item.city,
+                country=item.country,
+                modality=item.modality,
+                quantity=item.quantity,
+                brand=item.brand,
+                model=item.model,
+                approx_age_years=item.approx_age_years,
+                confidence=_safe_confidence(item.confidence),
+                status=_safe_status(item.status),
+                source=item.source,
+                observer=name,
+                visit_date=item.visit_date,
+            )
+        )
+        store.cache_response(client_event_id, {"observation_id": observation.id})
+        accepted.append(SyncAcceptedItem(local_id=item.local_id, observation_id=observation.id))
+
+    return SyncResponse(accepted=accepted)
 
 
 @app.get("/customers", response_model=list[CustomerSummary])

@@ -4,6 +4,10 @@ Un componente, una sección. Cada línea es `commit` + fecha + qué cambió, par
 poder rastrear cuándo y en qué commit cambió cada pieza sin tener que bucear
 en `git log`. Entradas más nuevas arriba de cada sección.
 
+La app móvil de técnicos (`apps/technician-app`, Expo/React Native) tiene su
+propio changelog en esa carpeta -- stack y ciclo de vida distintos al resto
+de este monorepo.
+
 ## RAG
 
 - `616bda0` 2026-09-07: suite pytest para `/health` y `/search` (modo fallback keyword-search)
@@ -23,6 +27,8 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 ## Frontend
 
+- `24d7bee` 2026-09-09: pestana "Tecnicos" ahora es el dashboard de operacion completo que se pidio -- cuantos registros subio cada tecnico, badge "nodo principal" cuando el tecnico esta usando `/extract` (proceso en el nodo, no local), y tabla tecnico x pais reusando el `/analytics` que ya llamaba la pestana Analytics
+- `b6cd4dd` 2026-09-09: pestana "Tecnicos" -- registrar (nombre + PIN, `POST /technicians`) y ver ultima actividad de cada uno (verde/ambar/gris por antiguedad, "Nunca conectado" si nunca llego); registrar no requiere ningun paso de "sincronizar" aparte, el `/auth/roster` que ya existia levanta la lista actualizada solo. Tambien primer sistema de diseno compartido (`theme.ts`) -- antes cada vista tenia sus propios estilos inline sueltos; aplicado al shell de la app y a la vista nueva, el resto de las vistas queda pendiente
 - `13ec033` 2026-09-08: fix de 2 tests que rompieron al correr la suite completa (getAllByText en Analytics, mock de /analytics en App.test.tsx)
 - `1046bb0` 2026-09-08: pestanas Fotos y Consultas (antes solo existian como API), login de tecnico compartido entre pestanas via LoginGate.tsx, Analytics ahora muestra stale_customers/refresh_opportunities
 - `c7454a2` 2026-09-08: login por PIN en CaptureView (requerido ahora por `/capture/turn`)
@@ -32,6 +38,11 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 ## Installed Base (Philips Challenge)
 
+- `24d7bee` 2026-09-09: `AnalyticsSummary` gana `by_technician`/`by_technician_country` (agrupado por `observer`, que ya es confiable porque `/capture/turn` y `/sync` siempre lo pisan con el nombre del tecnico autenticado); `technicians` gana `last_extract_at`, actualizado desde `/extract` -- responde "ya envio procesamiento al nodo principal" en vez de solo "esta online". `Store.list_technicians_with_activity()` calcula `observation_count` con un solo join en vez de que cada consumidor arme su propio conteo
+- `46a67c5` 2026-09-09: tecnicos movidos de un dict hardcodeado en `auth.py` a una tabla SQLite real -- no habia forma de registrar uno nuevo sin editar codigo y redesplegar. `POST /technicians` (nombre+PIN) + `GET /technicians` (nunca expone PIN/hash) para el admin del frontend; `GET /auth/roster` no necesito ningun cambio, ya leia de "la lista de tecnicos que exista" y ahora esa lista es persistente y mutable. `last_seen_at` se actualiza en cada request autenticado (login/captura/sync/extract/roster) via `get_current_technician` -- visibilidad real de que apps estan hablando con este nodo, no solo un roster estatico
+- `96d4e14` 2026-09-09: `POST /extract` -- contraparte sin estado de `/capture/turn` para la app movil; cuando el telefono esta online usa el modelo que el Router tenga registrado para "completion" (potencialmente mas grande que el del telefono) en vez de extraer localmente, sin efectos de sesion/guardado ya que la app maneja todo eso por su cuenta
+- `4bb74e3` 2026-09-09: `GET /auth/roster` -- pepper + PIN hashes para que la app movil pueda validar el login offline sin PINs hardcodeados; requiere token (misma dependencia que el resto de endpoints de escritura), asi el pepper nunca queda embebido en el build de la app
+- `5bf690b` 2026-09-09: `POST /sync` -- acepta en batch la cola offline de la app movil, idempotente por (tecnico, local_id) via el mismo cache de `processed_events`
 - `0342b14` 2026-09-08: `compute_confidence` ahora factoriza la antiguedad de la observacion (se recalcula en cada lectura, no queda congelado al insertar)
 - `7d2f647` 2026-09-08: auth de tecnico por PIN, captura por voz, captura por foto con cola de revision, confidence combinado, freshness/oportunidades, `/query` en lenguaje natural, idempotencia via `client_event_id` (cierra los 5 stretch goals + arquitectura multi-nodo)
 - `2e748e6` 2026-09-07: suite pytest -- parseo JSON defensivo, deteccion de duplicados, analytics, `/capture/turn` con Router/Peer mockeados
@@ -39,6 +50,11 @@ en `git log`. Entradas más nuevas arriba de cada sección.
 
 ## Shared / Infra
 
+- `b77aa46` 2026-09-09: `peer-medium`/`peer-gpu` pasan de `LLAMA_3_2_1B_INST_Q4_0` (mismo modelo que el telefono) a `MEDGEMMA_4B_IT_Q4_1` -- para que el nuevo `/extract` de la app movil (prefiere el nodo principal cuando esta online) realmente entregue un modelo mejor, no el mismo. MedGemma elegido por dominio (equipos medicos), verificado como constante real en el SDK instalado; riesgo conocido sin verificar en hardware real: esta afinado para QA clinico, no necesariamente para JSON estricto -- `QWEN3_4B_INST_Q4_K_M` (tambien verificado) es el fallback de una linea
+- `3e68ebc` 2026-09-09: README raiz actualizado -- la referencia a `technician-app` seguia describiendo el smoke test original, varios commits despues de haber sido reemplazado por el flujo real
+- `867a6e2` 2026-09-09: `run_tests.py` -- `technician-app` corria `npm test`, que falla ahora mismo (no existe ese script desde que se reemplazo el smoke test); corre `npm run typecheck` en su lugar
+- `30c7a72` 2026-09-08: `apps/technician-app` cableado en `scripts/run_tests.py` + README/CHANGELOG actualizados para reflejar la app movil real (Expo/React Native)
+- `06689b0` 2026-09-08: split de docker-compose en 3 laptops (node-a/b/c) para P2P real, docs/multi-host-demo.md
 - `ab35a24` 2026-09-07: README documenta el reto Philips (Installed Base), componentes, diagrama y puertos actualizados
 - `bdc7ac8` 2026-09-08: `peer-vision`/`peer-voice` en docker-compose + volumen `media-data` compartido + `AUTH_PEPPER`/`INSTALLED_BASE_MEDIA_DIR` en `.env.example`
 - `ef1cc01` 2026-09-07: installed-base en docker-compose (puerto 8005, volumen propio) + `.env.example` + `scripts/run_tests.py`

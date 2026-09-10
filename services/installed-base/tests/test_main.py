@@ -133,6 +133,84 @@ def test_auth_technician_invalid_pin_returns_401():
         assert resp.status_code == 401
 
 
+def test_auth_roster_requires_auth():
+    with TestClient(app) as client:
+        resp = client.get("/auth/roster")
+        assert resp.status_code == 401
+
+
+def test_auth_roster_returns_pepper_and_pin_hashes():
+    with TestClient(app) as client:
+        token = _login(client)
+        resp = client.get("/auth/roster", headers=_auth_headers(token))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["pepper"]
+        names = {t["name"] for t in body["technicians"]}
+        assert "Field User 01" in names
+        # never the raw PIN
+        assert all(VALID_PIN not in t["pin_hash"] for t in body["technicians"])
+
+
+def test_register_technician_creates_a_working_login():
+    with TestClient(app) as client:
+        resp = client.post("/technicians", json={"name": "New Tech", "pin": "9876"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["name"] == "New Tech"
+        assert body["technician_id"].startswith("tech-")
+
+        # Immediately usable for a real login, not just a roster entry.
+        login = client.post("/auth/technician", json={"pin": "9876"})
+        assert login.status_code == 200
+        assert login.json()["name"] == "New Tech"
+
+
+def test_register_technician_rejects_duplicate_pin():
+    with TestClient(app) as client:
+        resp = client.post("/technicians", json={"name": "Someone Else", "pin": VALID_PIN})
+        assert resp.status_code == 400
+
+
+def test_register_technician_rejects_bad_pin_format():
+    with TestClient(app) as client:
+        resp = client.post("/technicians", json={"name": "Bad Pin", "pin": "12"})
+        assert resp.status_code == 400
+
+
+def test_list_technicians_includes_seed_and_new_registrations():
+    with TestClient(app) as client:
+        client.post("/technicians", json={"name": "New Tech", "pin": "9876"})
+        resp = client.get("/technicians")
+        assert resp.status_code == 200
+        names = {t["name"] for t in resp.json()}
+        assert "Field User 01" in names  # seeded
+        assert "New Tech" in names  # just registered
+        # Never leaks a PIN or its hash to the admin list view.
+        assert all("pin" not in t and "pin_hash" not in t for t in resp.json())
+
+
+def test_registered_technician_appears_in_roster_for_offline_sync():
+    with TestClient(app) as client:
+        client.post("/technicians", json={"name": "New Tech", "pin": "9876"})
+        token = _login(client)  # some other technician's own login
+        resp = client.get("/auth/roster", headers=_auth_headers(token))
+        names = {t["name"] for t in resp.json()["technicians"]}
+        assert "New Tech" in names
+
+
+def test_last_seen_is_bumped_by_authenticated_requests():
+    with TestClient(app) as client:
+        before = next(t for t in client.get("/technicians").json() if t["name"] == "Field User 01")
+        assert before["last_seen_at"] is None
+
+        token = _login(client)
+        client.get("/auth/roster", headers=_auth_headers(token))
+
+        after = next(t for t in client.get("/technicians").json() if t["name"] == "Field User 01")
+        assert after["last_seen_at"] is not None
+
+
 def test_capture_turn_requires_auth():
     with TestClient(app) as client:
         resp = client.post("/capture/turn", json={"text": "hola"})
@@ -183,6 +261,62 @@ def test_capture_turn_returns_503_when_no_peer_available(monkeypatch):
         token = _login(client)
         resp = client.post("/capture/turn", json={"text": "hola"}, headers=_auth_headers(token))
         assert resp.status_code == 503
+
+
+def test_extract_requires_auth():
+    with TestClient(app) as client:
+        resp = client.post("/extract", json={"transcript": ["hola"]})
+        assert resp.status_code == 401
+
+
+def test_extract_returns_parsed_result(monkeypatch):
+    _reset_fake_router()
+    _FakeRouterClient.responses = {"completion": COMPLETE_EXTRACTION}
+    monkeypatch.setattr("app.extraction.httpx.AsyncClient", _FakeRouterClient)
+
+    with TestClient(app) as client:
+        token = _login(client)
+        resp = client.post(
+            "/extract",
+            json={"transcript": ["two MR at Hospital Test in Panama"]},
+            headers=_auth_headers(token),
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["customer"] == "Hospital Test"
+        assert body["ready_to_save"] is True
+        # Stateless: no session, no save -- just the extracted JSON.
+        assert client.get("/customers/Hospital Test").status_code == 404
+
+
+def test_extract_returns_503_when_no_peer_available(monkeypatch):
+    _reset_fake_router()
+    monkeypatch.setattr("app.extraction.httpx.AsyncClient", _FakeRouterClient)
+
+    with TestClient(app) as client:
+        token = _login(client)
+        resp = client.post("/extract", json={"transcript": ["hola"]}, headers=_auth_headers(token))
+        assert resp.status_code == 503
+
+
+def test_extract_bumps_last_extract_at_for_ops_dashboard(monkeypatch):
+    _reset_fake_router()
+    _FakeRouterClient.responses = {"completion": COMPLETE_EXTRACTION}
+    monkeypatch.setattr("app.extraction.httpx.AsyncClient", _FakeRouterClient)
+
+    with TestClient(app) as client:
+        before = next(t for t in client.get("/technicians").json() if t["name"] == "Field User 01")
+        assert before["last_extract_at"] is None
+
+        token = _login(client)
+        client.post(
+            "/extract",
+            json={"transcript": ["two MR at Hospital Test in Panama"]},
+            headers=_auth_headers(token),
+        )
+
+        after = next(t for t in client.get("/technicians").json() if t["name"] == "Field User 01")
+        assert after["last_extract_at"] is not None
 
 
 def test_capture_turn_is_idempotent_with_client_event_id(monkeypatch):
@@ -357,3 +491,61 @@ def test_query_returns_503_when_no_peer_available(monkeypatch):
     with TestClient(app) as client:
         resp = client.post("/query", json={"question": "anything"})
         assert resp.status_code == 503
+
+
+# -- offline sync (technician app's local SQLite queue) --------------------
+
+
+def _sync_item(local_id: int, **overrides) -> dict:
+    item = {
+        "local_id": local_id,
+        "customer": "Hospital Sync",
+        "city": None,
+        "country": "Panama",
+        "modality": "MR",
+        "quantity": 1,
+        "brand": "NovaMed",
+        "model": None,
+        "approx_age_years": 5,
+        "confidence": "high",
+        "status": "reported",
+        "source": "text",
+        "observer": "Someone the client made up",
+        "visit_date": "2026-09-09",
+    }
+    item.update(overrides)
+    return item
+
+
+def test_sync_requires_auth():
+    with TestClient(app) as client:
+        resp = client.post("/sync", json={"pending_observations": [_sync_item(1)]})
+        assert resp.status_code == 401
+
+
+def test_sync_accepts_batch_and_uses_authenticated_observer():
+    with TestClient(app) as client:
+        token = _login(client)
+        resp = client.post(
+            "/sync", json={"pending_observations": [_sync_item(1), _sync_item(2)]}, headers=_auth_headers(token)
+        )
+        assert resp.status_code == 200
+        accepted = resp.json()["accepted"]
+        assert [a["local_id"] for a in accepted] == [1, 2]
+
+        detail = client.get("/customers/Hospital Sync")
+        assert detail.status_code == 200
+        # observer comes from the token, never the client-sent field
+        assert all(o["observer"] == "Field User 01" for o in detail.json())
+
+
+def test_sync_is_idempotent_per_local_id():
+    with TestClient(app) as client:
+        token = _login(client)
+        payload = {"pending_observations": [_sync_item(1)]}
+        first = client.post("/sync", json=payload, headers=_auth_headers(token))
+        second = client.post("/sync", json=payload, headers=_auth_headers(token))
+        assert first.json()["accepted"] == second.json()["accepted"]
+
+        detail = client.get("/customers/Hospital Sync")
+        assert len(detail.json()) == 1  # not duplicated

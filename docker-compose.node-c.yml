@@ -1,0 +1,33 @@
+# Node C ("GPU/Large Provider") for a real 3-machine demo: just peer-gpu.
+# The one that makes the demo's "wow" moment visible: a complex question
+# gets routed here, to a laptop physically separate from Node A, over P2P.
+#
+# Before running, copy .env.node-c.example to .env.node-c and set
+# ROUTER_HOST to Node A's real LAN IP (see docs/multi-host-demo.md).
+name: enterprise-ai-mesh-node-c
+
+services:
+  peer-gpu:
+    build:
+      context: .
+      dockerfile: services/peer/Dockerfile
+    environment:
+      NODE_ID: peer-gpu
+      ROLE: large_provider
+      MODEL_TIER: large
+      MODEL_NAME: LLAMA_3_2_1B_INST_Q4_0
+      PRICE_PER_1K_TOKENS: "0.003"
+      ROUTER_URL: http://${ROUTER_HOST}:8001
+      PORT: "8000"
+    ports:
+      - "8004:8000"
+    volumes:
+      - qvac-models-gpu:/data/qvac-models
+    networks: [mesh]
+
+networks:
+  mesh:
+    driver: bridge
+
+volumes:
+  qvac-models-gpu:
