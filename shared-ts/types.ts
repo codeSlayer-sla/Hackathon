@@ -140,6 +140,23 @@ export interface TechnicianAuthResponse {
   name: string;
 }
 
+export interface RegisterTechnicianRequest {
+  name: string;
+  pin: string;
+}
+
+export interface RegisterTechnicianResponse {
+  technician_id: string;
+  name: string;
+}
+
+export interface TechnicianSummary {
+  technician_id: string;
+  name: string;
+  created_at: string;
+  last_seen_at?: string;
+}
+
 export interface PhotoRecord {
   id: number;
   photo_path: string;
