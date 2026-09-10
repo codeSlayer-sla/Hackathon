@@ -86,3 +86,34 @@ class RosterEntry(BaseModel):
 class RosterResponse(BaseModel):
     pepper: str
     technicians: list[RosterEntry]
+
+
+class ExtractRequest(BaseModel):
+    """Stateless extraction for the technician app: when it's online, it
+    sends its own locally-tracked transcript here instead of running
+    on-device, so the request lands on this node's (larger) model instead
+    of the phone's. No session/save side effects -- the app owns its own
+    session state, review checkpoint, and eventual /sync entirely; this
+    endpoint only ever returns the extracted JSON."""
+
+    transcript: list[str]
+
+
+class ExtractedEquipmentItem(BaseModel):
+    modality: str
+    quantity: int | None = None
+    brand: str | None = None
+    model: str | None = None
+    approx_age_years: float | None = None
+    confidence: str
+    status: str
+
+
+class ExtractionResultSchema(BaseModel):
+    customer: str | None = None
+    city: str | None = None
+    country: str | None = None
+    equipment: list[ExtractedEquipmentItem] = []
+    missing_required: list[str] = []
+    follow_up_question: str | None = None
+    ready_to_save: bool = False

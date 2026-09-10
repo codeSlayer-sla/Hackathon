@@ -22,6 +22,8 @@ from qvac_mesh_shared.config import NodeSettings
 
 from . import auth, extraction
 from .schemas import (
+    ExtractRequest,
+    ExtractionResultSchema,
     PhotoRecord,
     PhotoValidateRequest,
     RosterResponse,
@@ -205,6 +207,25 @@ async def capture_turn(
     if request.client_event_id:
         store.cache_response(request.client_event_id, response.model_dump(mode="json"))
     return response
+
+
+@app.post("/extract", response_model=ExtractionResultSchema)
+async def extract(
+    request: ExtractRequest, technician: tuple[str, str] = Depends(auth.get_current_technician)
+) -> ExtractionResultSchema:
+    """Stateless counterpart to the technician app's on-device extraction.
+    When the phone is online, it sends its own transcript here instead of
+    running locally -- same Router-mediated extraction /capture/turn uses,
+    just without any session/save side effects, since the app already owns
+    all of that itself. Which peer actually answers (and therefore how big
+    a model this runs) is whatever the Router has registered for
+    "completion" -- see docs/multi-host-demo.md for pointing this node's
+    peer at a bigger model than the phone can run."""
+    try:
+        extracted = await extraction.extract_from_transcript(settings.router_url, request.transcript)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return ExtractionResultSchema.model_validate(extracted)
 
 
 @app.post("/capture/turn/voice", response_model=CaptureTurnResponse)

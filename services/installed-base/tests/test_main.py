@@ -204,6 +204,42 @@ def test_capture_turn_returns_503_when_no_peer_available(monkeypatch):
         assert resp.status_code == 503
 
 
+def test_extract_requires_auth():
+    with TestClient(app) as client:
+        resp = client.post("/extract", json={"transcript": ["hola"]})
+        assert resp.status_code == 401
+
+
+def test_extract_returns_parsed_result(monkeypatch):
+    _reset_fake_router()
+    _FakeRouterClient.responses = {"completion": COMPLETE_EXTRACTION}
+    monkeypatch.setattr("app.extraction.httpx.AsyncClient", _FakeRouterClient)
+
+    with TestClient(app) as client:
+        token = _login(client)
+        resp = client.post(
+            "/extract",
+            json={"transcript": ["two MR at Hospital Test in Panama"]},
+            headers=_auth_headers(token),
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["customer"] == "Hospital Test"
+        assert body["ready_to_save"] is True
+        # Stateless: no session, no save -- just the extracted JSON.
+        assert client.get("/customers/Hospital Test").status_code == 404
+
+
+def test_extract_returns_503_when_no_peer_available(monkeypatch):
+    _reset_fake_router()
+    monkeypatch.setattr("app.extraction.httpx.AsyncClient", _FakeRouterClient)
+
+    with TestClient(app) as client:
+        token = _login(client)
+        resp = client.post("/extract", json={"transcript": ["hola"]}, headers=_auth_headers(token))
+        assert resp.status_code == 503
+
+
 def test_capture_turn_is_idempotent_with_client_event_id(monkeypatch):
     _reset_fake_router()
     _FakeRouterClient.responses = {"completion": COMPLETE_EXTRACTION}
