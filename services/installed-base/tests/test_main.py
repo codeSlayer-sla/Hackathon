@@ -299,6 +299,26 @@ def test_extract_returns_503_when_no_peer_available(monkeypatch):
         assert resp.status_code == 503
 
 
+def test_extract_bumps_last_extract_at_for_ops_dashboard(monkeypatch):
+    _reset_fake_router()
+    _FakeRouterClient.responses = {"completion": COMPLETE_EXTRACTION}
+    monkeypatch.setattr("app.extraction.httpx.AsyncClient", _FakeRouterClient)
+
+    with TestClient(app) as client:
+        before = next(t for t in client.get("/technicians").json() if t["name"] == "Field User 01")
+        assert before["last_extract_at"] is None
+
+        token = _login(client)
+        client.post(
+            "/extract",
+            json={"transcript": ["two MR at Hospital Test in Panama"]},
+            headers=_auth_headers(token),
+        )
+
+        after = next(t for t in client.get("/technicians").json() if t["name"] == "Field User 01")
+        assert after["last_extract_at"] is not None
+
+
 def test_capture_turn_is_idempotent_with_client_event_id(monkeypatch):
     _reset_fake_router()
     _FakeRouterClient.responses = {"completion": COMPLETE_EXTRACTION}

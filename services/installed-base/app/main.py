@@ -253,6 +253,7 @@ async def extract(
         extracted = await extraction.extract_from_transcript(settings.router_url, request.transcript)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    auth.mark_used_remote_extraction(technician[0])
     return ExtractionResultSchema.model_validate(extracted)
 
 

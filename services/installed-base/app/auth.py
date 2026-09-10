@@ -117,9 +117,13 @@ def register_technician(name: str, pin: str) -> tuple[str, str]:
 
 
 def list_technicians() -> list[dict]:
-    """For the frontend's technician admin view -- id/name/created_at/
-    last_seen_at only, never a PIN or its hash."""
-    return _require_store().list_technicians()
+    """For the frontend's ops dashboard -- id/name/created_at/last_seen_at/
+    last_extract_at/observation_count, never a PIN or its hash."""
+    return _require_store().list_technicians_with_activity()
+
+
+def mark_used_remote_extraction(technician_id: str) -> None:
+    _require_store().touch_technician_last_extract(technician_id)
 
 
 def list_roster() -> dict:

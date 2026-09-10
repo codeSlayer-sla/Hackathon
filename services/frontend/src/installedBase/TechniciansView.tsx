@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { TechnicianSummary } from "@shared/types";
-import { listTechnicians, registerTechnician } from "../api/installedBase";
+import type { AnalyticsSummary, TechnicianSummary } from "@shared/types";
+import { getAnalytics, listTechnicians, registerTechnician } from "../api/installedBase";
 import { badge, button, card, colors, input } from "../theme";
 
 function relativeLastSeen(iso: string | undefined): { label: string; tone: "online" | "recent" | "stale" | "never" } {
@@ -24,6 +24,7 @@ const TONE_STYLE: Record<string, [string, string]> = {
 
 export default function TechniciansView() {
   const [technicians, setTechnicians] = useState<TechnicianSummary[]>([]);
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -33,13 +34,19 @@ export default function TechniciansView() {
     listTechnicians()
       .then(setTechnicians)
       .catch(() => setTechnicians([]));
+    // Powers the technician x pais matrix below -- same /analytics the
+    // Analytics tab already uses, no dedicated endpoint needed.
+    getAnalytics()
+      .then(setAnalytics)
+      .catch(() => setAnalytics(null));
   }
 
   useEffect(() => {
     refresh();
-    // Reflects last_seen_at as it changes (a phone syncing, logging in,
-    // etc.) without a manual refresh -- this is the "which technician apps
-    // are actually talking to us" view, so it should feel live.
+    // Reflects last_seen_at/observation_count/last_extract_at as they change
+    // (a phone syncing, logging in, offloading a request to this node, etc.)
+    // without a manual refresh -- this is the "which technician apps are
+    // actually talking to us" view, so it should feel live.
     const id = setInterval(refresh, 15_000);
     return () => clearInterval(id);
   }, []);
@@ -107,6 +114,7 @@ export default function TechniciansView() {
             {technicians.map((t) => {
               const seen = relativeLastSeen(t.last_seen_at);
               const [bg, fg] = TONE_STYLE[seen.tone];
+              const usedMesh = !!t.last_extract_at;
               return (
                 <div
                   key={t.technician_id}
@@ -122,13 +130,61 @@ export default function TechniciansView() {
                     <div style={{ fontWeight: 600 }}>{t.name}</div>
                     <div style={{ fontSize: 12, color: colors.textMuted }}>{t.technician_id}</div>
                   </div>
-                  <span style={badge(bg, fg)}>{seen.label}</span>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={badge(colors.border, colors.textMuted)}>
+                      {t.observation_count} registro{t.observation_count === 1 ? "" : "s"}
+                    </span>
+                    {usedMesh && (
+                      <span style={badge(colors.successBg, colors.success)}>· nodo principal</span>
+                    )}
+                    <span style={badge(bg, fg)}>{seen.label}</span>
+                  </div>
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {analytics?.by_technician_country && Object.keys(analytics.by_technician_country).length > 0 && (
+        <div style={card}>
+          <h3 style={{ marginTop: 0 }}>Registros por técnico y país</h3>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", padding: "6px 10px", borderBottom: `1px solid ${colors.border}` }}>
+                    Técnico
+                  </th>
+                  {Object.keys(analytics?.by_country ?? {}).map((country) => (
+                    <th
+                      key={country}
+                      style={{ textAlign: "right", padding: "6px 10px", borderBottom: `1px solid ${colors.border}` }}
+                    >
+                      {country}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(analytics.by_technician_country).map(([tech, byCountry]) => (
+                  <tr key={tech}>
+                    <td style={{ padding: "6px 10px", borderBottom: `1px solid ${colors.border}` }}>{tech}</td>
+                    {Object.keys(analytics?.by_country ?? {}).map((country) => (
+                      <td
+                        key={country}
+                        style={{ textAlign: "right", padding: "6px 10px", borderBottom: `1px solid ${colors.border}` }}
+                      >
+                        {byCountry[country] ?? 0}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

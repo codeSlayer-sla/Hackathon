@@ -34,6 +34,8 @@ class TechnicianSummary(BaseModel):
     name: str
     created_at: str
     last_seen_at: str | None = None
+    last_extract_at: str | None = None
+    observation_count: int = 0
 
 
 class PhotoRecord(BaseModel):

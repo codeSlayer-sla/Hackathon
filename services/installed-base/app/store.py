@@ -73,7 +73,8 @@ CREATE TABLE IF NOT EXISTS technicians (
     name TEXT NOT NULL,
     pin_hash TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL,
-    last_seen_at TEXT
+    last_seen_at TEXT,
+    last_extract_at TEXT
 );
 """
 
@@ -236,6 +237,8 @@ class Store:
         by_modality: dict[str, int] = {}
         by_country: dict[str, int] = {}
         by_status: dict[str, int] = {}
+        by_technician: dict[str, int] = {}
+        by_technician_country: dict[str, dict[str, int]] = {}
         ages: list[float] = []
         aging_customers: set[str] = set()
         incomplete_customers: set[str] = set()
@@ -248,6 +251,14 @@ class Store:
             if o.country:
                 by_country[o.country] = by_country.get(o.country, 0) + (o.quantity or 0)
             by_status[o.status.value] = by_status.get(o.status.value, 0) + 1
+            if o.observer:
+                # Counts records (rows), not equipment quantity like
+                # by_modality/by_country above -- "how many uploads has this
+                # technician made" is a record count, not an inventory total.
+                by_technician[o.observer] = by_technician.get(o.observer, 0) + 1
+                if o.country:
+                    country_counts = by_technician_country.setdefault(o.observer, {})
+                    country_counts[o.country] = country_counts.get(o.country, 0) + 1
             last_seen[o.customer] = max(last_seen.get(o.customer, o.created_at), o.created_at)
             if o.approx_age_years is not None:
                 ages.append(o.approx_age_years)
@@ -279,6 +290,8 @@ class Store:
             by_modality=by_modality,
             by_country=by_country,
             by_status=by_status,
+            by_technician=by_technician,
+            by_technician_country=by_technician_country,
             average_age_years=round(sum(ages) / len(ages), 1) if ages else None,
             aging_customers=sorted(aging_customers),
             incomplete_customers=sorted(incomplete_customers),
@@ -400,6 +413,36 @@ class Store:
             "SELECT technician_id, name, created_at, last_seen_at FROM technicians ORDER BY created_at"
         )
         return [dict(r) for r in cur.fetchall()]
+
+    def list_technicians_with_activity(self) -> list[dict]:
+        """Same as list_technicians() plus observation_count and
+        last_extract_at -- what the frontend's ops dashboard actually needs
+        (uploads + whether they've offloaded processing to this node), in
+        one query instead of the view doing its own joins."""
+        cur = self._conn.execute(
+            """
+            SELECT
+                t.technician_id,
+                t.name,
+                t.created_at,
+                t.last_seen_at,
+                t.last_extract_at,
+                COALESCE(o.cnt, 0) AS observation_count
+            FROM technicians t
+            LEFT JOIN (
+                SELECT observer, COUNT(*) AS cnt FROM observations GROUP BY observer
+            ) o ON o.observer = t.name
+            ORDER BY t.created_at
+            """
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def touch_technician_last_extract(self, technician_id: str) -> None:
+        self._conn.execute(
+            "UPDATE technicians SET last_extract_at = ? WHERE technician_id = ?",
+            (datetime.now(timezone.utc).isoformat(), technician_id),
+        )
+        self._conn.commit()
 
     def find_technician_by_pin_hash(self, pin_hash: str) -> dict | None:
         cur = self._conn.execute(
