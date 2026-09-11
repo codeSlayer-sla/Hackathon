@@ -5,7 +5,7 @@ FROM python:3.11-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get install -y --no-install-recommends nodejs libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /srv
@@ -15,8 +15,11 @@ COPY shared/py /srv/shared
 RUN pip install --no-cache-dir /srv/shared
 
 COPY services/rag/requirements.txt /srv/requirements.txt
+COPY scripts/fix_qvac_worker.sh /tmp/fix_qvac_worker.sh
 RUN pip install --no-cache-dir -r /srv/requirements.txt \
-    && python -m tetherto.qvac_sdk install-worker || true
+    && (python -m tetherto.qvac_sdk install-worker || true) \
+    && sh /tmp/fix_qvac_worker.sh \
+    && rm /tmp/fix_qvac_worker.sh
 
 COPY services/rag/app /srv/app
 

@@ -34,22 +34,38 @@ class QvacRuntime:
             from tetherto.qvac_sdk import Client, load_model
             from tetherto.qvac_sdk import models as qvac_models
 
-            model_src = getattr(qvac_models, self.model_name)
+            from qvac_mesh_shared.qvac_model_sources import DIRECT_MODEL_SOURCES
+
+            def resolve(name: str) -> tuple[object, str | None]:
+                """Prefer a direct HTTPS download over QVAC's P2P registry
+                path when we know one -- see qvac_model_sources.py for why.
+                Returns (model_src, model_type); model_type is None when
+                falling back to a registry ModelConstant (type is inferred)."""
+                direct = DIRECT_MODEL_SOURCES.get(name)
+                if direct is not None:
+                    return direct
+                return getattr(qvac_models, name), None
+
             self._client = Client()
             await self._client.__aenter__()
             self._transport = self._client.transport
 
+            model_src, model_type = resolve(self.model_name)
+
             if self.kind == "multimodal":
                 if not self.projection_model_name:
                     raise ValueError("multimodal peers require MODEL_PROJECTION_NAME")
-                projection_src = getattr(qvac_models, self.projection_model_name)
+                projection_src, _ = resolve(self.projection_model_name)
+                kwargs = {"model_type": model_type} if model_type else {}
                 self._model_id = await load_model(
                     self._transport,
                     model_src=model_src,
                     model_config={"projectionModelSrc": projection_src},
+                    **kwargs,
                 )
             else:
-                self._model_id = await load_model(self._transport, model_src=model_src)
+                kwargs = {"model_type": model_type} if model_type else {}
+                self._model_id = await load_model(self._transport, model_src=model_src, **kwargs)
 
             self.ready = True
             logger.info("QVAC model '%s' (%s) loaded, peer ready for real inference", self.model_name, self.kind)

@@ -78,12 +78,22 @@ class RagEngine:
         from tetherto.qvac_sdk import Client, load_model
         from tetherto.qvac_sdk.models import EMBEDDINGGEMMA_300M_Q4_0
 
+        from qvac_mesh_shared.qvac_model_sources import DIRECT_MODEL_SOURCES
+
         self._client = Client()
         await self._client.__aenter__()
         self._transport = self._client.transport
-        self._embed_model_id = await load_model(
-            self._transport, model_src=EMBEDDINGGEMMA_300M_Q4_0
-        )
+
+        direct_source = DIRECT_MODEL_SOURCES.get(EMBEDDING_MODEL_NAME)
+        if direct_source is not None:
+            url, model_type = direct_source
+            self._embed_model_id = await load_model(
+                self._transport, model_src=url, model_type=model_type
+            )
+        else:
+            self._embed_model_id = await load_model(
+                self._transport, model_src=EMBEDDINGGEMMA_300M_Q4_0
+            )
 
     async def _ingest_demo_docs(self) -> None:
         from tetherto.qvac_sdk import RagRequest, rag
