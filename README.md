@@ -1,5 +1,23 @@
 # Technician App (mobile)
 
+## Base preexistente declarada (requisito obligatorio de la hackathon)
+
+Las reglas de la hackathon exigen declarar cualquier base preexistente en
+el README. La ventana oficial de construcción es:
+
+> **9 de septiembre 2026, 08:00 → 11 de septiembre 2026, 08:00**
+
+Todo el historial de esta rama hasta el commit `b2a91ba8e0b9392b3289b0e095a0207b5137e62f`
+(2026-09-08 23:32:44) fue construido **antes** de que abriera esa ventana —
+preparación previa, verificable con `git log`. Es el mismo scaffold y
+avance de la app móvil ya declarado en el README de
+`challenge/philips-installed-base` (de donde se sincronizó esta rama);
+esta rama solo aísla esa misma app en su propio historial para
+entregarla por separado.
+
+Cualquier commit con fecha `>= 2026-09-09 08:00` en esta rama es trabajo
+genuinamente realizado dentro de la ventana oficial de 48 horas.
+
 App para los técnicos de campo del reto Philips (`services/installed-base`):
 captura la observación de una visita (texto o voz) directo en el teléfono,
 corre la extracción con QVAC **en el dispositivo** (sin red, sin backend de
