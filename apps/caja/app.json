@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "CajaAI",
+    "slug": "caja-ai",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "cajaai",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.cajaai.app"
+    },
+    "ios": {
+      "bundleIdentifier": "com.cajaai.app"
+    },
+    "platforms": ["android", "ios", "web"],
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 29
+          }
+        }
+      ],
+      "./app.plugin"
+    ]
+  }
+}

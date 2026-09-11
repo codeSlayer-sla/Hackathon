@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# typescript
+*.tsbuildinfo
+
+# logs
+npm-debug.log*
+
+# generated QVAC mobile worker bundles (regenerated via `npm run qvac:build`)
+qvac/
+
+# local scratch / diagnostic artifacts
+metro.log
+pack_out.txt
+tmp-*.cjs
+trace-dlopen.cjs
