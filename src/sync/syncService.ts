@@ -12,10 +12,15 @@ export async function refreshRoster(token: string): Promise<boolean> {
   const server = await getServerUrl();
   if (!server) return false;
   try {
+    // AbortController + setTimeout, not AbortSignal.timeout() -- see
+    // LoginScreen.tsx for why the static method isn't used here.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
     const resp = await fetch(`${server}/auth/roster`, {
       headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(6000),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
     if (!resp.ok) return false;
     const body = await resp.json();
     await cacheRoster(body.pepper, body.technicians);

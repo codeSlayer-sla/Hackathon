@@ -281,12 +281,19 @@ export async function extractFromTranscriptRemote(
 
   let raw: any;
   try {
+    // AbortController + setTimeout, not AbortSignal.timeout() -- unreliable
+    // on this Hermes build (see LoginScreen.tsx), and a synchronous throw
+    // here would make every remote extraction silently fall back to
+    // on-device, indistinguishable from the server actually being down.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
     const resp = await fetch(`${server}/extract`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ transcript }),
-      signal: AbortSignal.timeout(20_000),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
     if (!resp.ok) return null;
     raw = await resp.json();
   } catch {

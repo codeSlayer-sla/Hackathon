@@ -37,12 +37,21 @@ export default function LoginScreen({ onLogin, onEditServer }: Props) {
     const server = await getServerUrl();
     try {
       if (!server) throw new Error('no server configured');
+      // AbortController + setTimeout, not AbortSignal.timeout() -- the
+      // static method isn't reliably available on this Hermes build, and
+      // when it throws synchronously the fetch below never even fires,
+      // silently falling through to offline mode every time regardless of
+      // real connectivity (same pattern already proven to work in
+      // syncService.ts's isServerReachable()).
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6000);
       const resp = await fetch(`${server}/auth/technician`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin }),
-        signal: AbortSignal.timeout(6000),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       if (resp.ok) {
         const data = await resp.json();
         // Best-effort: refresh the offline login cache now that we have a

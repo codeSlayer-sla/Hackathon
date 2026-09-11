@@ -33,7 +33,8 @@
         "expo-build-properties",
         {
           "android": {
-            "minSdkVersion": 29
+            "minSdkVersion": 29,
+            "usesCleartextTraffic": true
           }
         }
       ],
@@ -42,9 +43,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "87aae1c3-e06a-4fb1-a09a-b7126b8ec0e5"
+        "projectId": "157158f8-091c-4cc3-895f-8b147c6e888f"
       }
     },
-    "owner": "josems507"
+    "owner": "jgmsalcedo"
   }
 }

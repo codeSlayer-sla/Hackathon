@@ -31,7 +31,12 @@ export default function ServerSetupScreen({ initialUrl, onDone, allowSkip }: Pro
     setTesting(true);
     setTestResult(null);
     try {
-      const resp = await fetch(`${url.trim().replace(/\/+$/, '')}/health`, { signal: AbortSignal.timeout(5000) });
+      // AbortController + setTimeout, not AbortSignal.timeout() -- see
+      // LoginScreen.tsx for why the static method isn't used here.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const resp = await fetch(`${url.trim().replace(/\/+$/, '')}/health`, { signal: controller.signal });
+      clearTimeout(timeout);
       setTestResult(resp.ok ? 'ok' : 'fail');
     } catch {
       setTestResult('fail');
