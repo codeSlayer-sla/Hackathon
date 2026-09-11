@@ -16,8 +16,8 @@ construcción de 48 horas es:
 
 > **9 de septiembre 2026, 08:00 → 11 de septiembre 2026, 08:00**
 
-Todo el contenido de este repositorio hasta el commit `0925176`
-(2026-09-08 12:41) fue construido **antes** de que abriera esa ventana —
+Todo el contenido de este repositorio hasta el commit `5d1308c`
+(2026-09-08 16:34) fue construido **antes** de que abriera esa ventana —
 es decir, se declara íntegramente como preparación previa, verificable con
 `git log` (fechas y hashes reales):
 
@@ -33,6 +33,14 @@ es decir, se declara íntegramente como preparación previa, verificable con
   `peer`/`router` a capacidades multimodal/transcripción, auth de
   técnico, fotos, voz, confidence combinado, freshness, oportunidades de
   renovación y consultas en lenguaje natural.
+- **2026-09-08, 13:02–16:34** (commits `414a32a`..`5d1308c`): esta misma
+  declaración de base preexistente (escrita y confirmada dos veces ese
+  día, según se fue agregando más trabajo), más lo último construido
+  antes de la ventana oficial: ajuste de confidence por recencia,
+  pestañas "Fotos" y "Consultas" en el frontend con login de técnico
+  compartido, la mesh repartida en 3 laptops físicas para demostrar P2P
+  real, y el scaffold completo de la app móvil (`apps/technician-app`,
+  Expo/TypeScript) con su configuración de build en la nube (EAS).
 
 **Cualquier commit con fecha `>= 2026-09-09 08:00` en este repositorio es
 trabajo genuinamente realizado dentro de la ventana oficial de 48 horas**
