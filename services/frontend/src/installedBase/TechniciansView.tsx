@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import type { AnalyticsSummary, TechnicianSummary } from "@shared/types";
-import { getAnalytics, listTechnicians, registerTechnician } from "../api/installedBase";
-import { badge, button, card, colors, input } from "../theme";
+import { getAnalytics, listTechnicians } from "../api/installedBase";
+import { badge, card, colors, font } from "../theme";
+import StatTile from "../components/StatTile";
+import { DelegateIcon } from "../components/icons";
 
 function relativeLastSeen(iso: string | undefined): { label: string; tone: "online" | "recent" | "stale" | "never" } {
   if (!iso) return { label: "Nunca conectado", tone: "never" };
@@ -22,13 +24,18 @@ const TONE_STYLE: Record<string, [string, string]> = {
   never: [colors.border, colors.textMuted],
 };
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
+/** Read-only view onto the mesh's real client roster -- who's out there, who's
+ * online right now, and how much inference they've offloaded to this node.
+ * Technicians are provisioned another way (not from this dashboard); this
+ * screen is strictly for observing the mesh, never for administering it. */
 export default function TechniciansView() {
   const [technicians, setTechnicians] = useState<TechnicianSummary[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
-  const [name, setName] = useState("");
-  const [pin, setPin] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
   function refresh() {
     listTechnicians()
@@ -43,78 +50,55 @@ export default function TechniciansView() {
 
   useEffect(() => {
     refresh();
-    // Reflects last_seen_at/observation_count/last_extract_at as they change
-    // (a phone syncing, logging in, offloading a request to this node, etc.)
-    // without a manual refresh -- this is the "which technician apps are
-    // actually talking to us" view, so it should feel live.
+    // Reflects last_seen_at/observation_count/remote_extraction_count as
+    // they change (a phone syncing, logging in, offloading a request to
+    // this node, etc.) without a manual refresh -- this is the "which
+    // technician apps are actually talking to us" view, so it should feel
+    // live.
     const id = setInterval(refresh, 15_000);
     return () => clearInterval(id);
   }, []);
 
-  async function handleRegister() {
-    setError(null);
-    if (!name.trim()) {
-      setError("El nombre es obligatorio.");
-      return;
-    }
-    if (!/^\d{4,8}$/.test(pin)) {
-      setError("El PIN debe tener entre 4 y 8 dígitos.");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await registerTechnician(name.trim(), pin);
-      setName("");
-      setPin("");
-      refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  const totalDelegated = technicians.reduce((sum, t) => sum + (t.remote_extraction_count ?? 0), 0);
+  const onlineNow = technicians.filter((t) => relativeLastSeen(t.last_seen_at).tone === "online").length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={card}>
-        <h3 style={{ marginTop: 0 }}>Registrar técnico</h3>
-        <p style={{ color: colors.textMuted, fontSize: 13, marginTop: -8 }}>
-          El técnico podrá usar este PIN para iniciar sesión en la app móvil de inmediato. Su
-          teléfono descarga el PIN para uso offline automáticamente la próxima vez que esté
-          online (después de su propio login, o cuando la pantalla de Sincronizar detecte
-          conexión) -- no hace falta ningún paso adicional.
-        </p>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
-          <input
-            style={{ ...input, flex: 2, minWidth: 180 }}
-            placeholder="Nombre"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <input
-            style={{ ...input, flex: 1, minWidth: 100 }}
-            placeholder="PIN (4-8 dígitos)"
-            value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-            maxLength={8}
-          />
-          <button style={button} onClick={handleRegister} disabled={submitting}>
-            {submitting ? "Registrando…" : "Registrar"}
-          </button>
-        </div>
-        {error && <p style={{ color: colors.danger, fontSize: 13, marginBottom: 0 }}>{error}</p>}
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, fontFamily: font }}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <StatTile
+          label="Técnicos activos ahora"
+          value={`${onlineNow}/${technicians.length}`}
+          sublabel="vistos en los últimos 15 min"
+          tone={onlineNow > 0 ? "success" : "neutral"}
+          live
+          announce={`${onlineNow} de ${technicians.length} técnicos activos en los últimos 15 minutos`}
+        />
+        <StatTile
+          label="Delegado al nodo principal"
+          value={totalDelegated}
+          sublabel={totalDelegated === 1 ? "inferencia total" : "inferencias totales"}
+          tone={totalDelegated > 0 ? "success" : "neutral"}
+          live
+          announce={`${totalDelegated} inferencias delegadas al nodo principal en total`}
+        />
       </div>
 
       <div style={card}>
-        <h3 style={{ marginTop: 0 }}>Técnicos ({technicians.length})</h3>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
+          <h3 style={{ margin: 0, fontSize: 16 }}>Técnicos ({technicians.length})</h3>
+          <span style={{ fontSize: 12, color: colors.textMuted }}>Actualiza cada 15s</span>
+        </div>
+        <p style={{ color: colors.textMuted, fontSize: 13, marginTop: 2, marginBottom: 16 }}>
+          Quiénes están conectando a este nodo y cuánta inferencia le delegaron -- solo lectura.
+        </p>
         {technicians.length === 0 ? (
           <p style={{ color: colors.textMuted }}>Sin técnicos registrados todavía.</p>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
             {technicians.map((t) => {
               const seen = relativeLastSeen(t.last_seen_at);
               const [bg, fg] = TONE_STYLE[seen.tone];
-              const usedMesh = !!t.last_extract_at;
+              const delegatedCount = t.remote_extraction_count ?? 0;
               return (
                 <div
                   key={t.technician_id}
@@ -122,20 +106,55 @@ export default function TechniciansView() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    padding: "10px 4px",
+                    gap: 12,
+                    padding: "12px 4px",
                     borderTop: `1px solid ${colors.border}`,
+                    flexWrap: "wrap",
                   }}
                 >
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{t.name}</div>
-                    <div style={{ fontSize: 12, color: colors.textMuted }}>{t.technician_id}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                    <div
+                      aria-hidden="true"
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: "50%",
+                        background: colors.primaryLight,
+                        color: colors.primary,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {initials(t.name)}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{t.name}</div>
+                      <div style={{ fontSize: 12, color: colors.textMuted }}>{t.technician_id}</div>
+                    </div>
                   </div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <span style={badge(colors.border, colors.textMuted)}>
                       {t.observation_count} registro{t.observation_count === 1 ? "" : "s"}
                     </span>
-                    {usedMesh && (
-                      <span style={badge(colors.successBg, colors.success)}>· nodo principal</span>
+                    {delegatedCount > 0 && (
+                      <span
+                        title={`${delegatedCount} inferencia${delegatedCount === 1 ? "" : "s"} delegada${
+                          delegatedCount === 1 ? "" : "s"
+                        } al nodo principal`}
+                        style={{
+                          ...badge(colors.successBg, colors.success),
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <DelegateIcon color={colors.success} />
+                        {delegatedCount}x nodo principal
+                      </span>
                     )}
                     <span style={badge(bg, fg)}>{seen.label}</span>
                   </div>
@@ -148,7 +167,7 @@ export default function TechniciansView() {
 
       {analytics?.by_technician_country && Object.keys(analytics.by_technician_country).length > 0 && (
         <div style={card}>
-          <h3 style={{ marginTop: 0 }}>Registros por técnico y país</h3>
+          <h3 style={{ marginTop: 0, fontSize: 16 }}>Registros por técnico y país</h3>
           <div style={{ overflowX: "auto" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
               <thead>

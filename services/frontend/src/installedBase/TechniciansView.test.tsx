@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import TechniciansView from "./TechniciansView";
 
 function mockAnalytics() {
@@ -33,6 +32,7 @@ describe("TechniciansView", () => {
               created_at: new Date().toISOString(),
               last_seen_at: null,
               last_extract_at: null,
+              remote_extraction_count: 0,
               observation_count: 7,
             },
           ],
@@ -47,55 +47,48 @@ describe("TechniciansView", () => {
     expect(screen.getByText("7 registros")).toBeInTheDocument();
   });
 
-  it("registers a new technician and refreshes the list", async () => {
-    const fetchMock = vi.fn(async (url: string, opts?: RequestInit) => {
-      if (url.includes("/analytics")) return { ok: true, json: async () => mockAnalytics() };
-      if (opts?.method === "POST") {
-        return { ok: true, json: async () => ({ technician_id: "tech-99", name: "New Tech" }) };
-      }
-      return {
-        ok: true,
-        json: async () => [
-          {
-            technician_id: "tech-99",
-            name: "New Tech",
-            created_at: new Date().toISOString(),
-            last_seen_at: null,
-            observation_count: 0,
-          },
-        ],
-      };
-    });
-    vi.stubGlobal("fetch", fetchMock);
+  it("shows a delegation count badge when a technician has offloaded inference to this node", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("/analytics")) return { ok: true, json: async () => mockAnalytics() };
+        return {
+          ok: true,
+          json: async () => [
+            {
+              technician_id: "tech-01",
+              name: "Field User 01",
+              created_at: new Date().toISOString(),
+              last_seen_at: new Date().toISOString(),
+              last_extract_at: new Date().toISOString(),
+              remote_extraction_count: 3,
+              observation_count: 0,
+            },
+          ],
+        };
+      })
+    );
 
     render(<TechniciansView />);
-    await userEvent.type(screen.getByPlaceholderText("Nombre"), "New Tech");
-    await userEvent.type(screen.getByPlaceholderText(/PIN/), "9876");
-    await userEvent.click(screen.getByText("Registrar"));
 
-    expect(await screen.findByText("New Tech")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("/technicians"),
-      expect.objectContaining({ method: "POST" })
-    );
+    expect(await screen.findByText("3x nodo principal")).toBeInTheDocument();
+    // Aggregate KPI at the top of the view sums it across all technicians.
+    expect(screen.getByText("3")).toBeInTheDocument();
   });
 
-  it("rejects a PIN that isn't 4-8 digits without calling the API", async () => {
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/analytics")) return { ok: true, json: async () => mockAnalytics() };
-      return { ok: true, json: async () => [] };
-    });
-    vi.stubGlobal("fetch", fetchMock);
+  it("has no way to register a technician -- this view is read-only", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("/analytics")) return { ok: true, json: async () => mockAnalytics() };
+        return { ok: true, json: async () => [] };
+      })
+    );
 
     render(<TechniciansView />);
-    await userEvent.type(screen.getByPlaceholderText("Nombre"), "Bad Pin");
-    await userEvent.type(screen.getByPlaceholderText(/PIN/), "12");
-    await userEvent.click(screen.getByText("Registrar"));
 
-    expect(await screen.findByText(/entre 4 y 8 dígitos/)).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalledWith(
-      expect.stringContaining("/technicians"),
-      expect.objectContaining({ method: "POST" })
-    );
+    await screen.findByText("Técnicos (0)");
+    expect(screen.queryByPlaceholderText("Nombre")).not.toBeInTheDocument();
+    expect(screen.queryByText("Registrar")).not.toBeInTheDocument();
   });
 });
