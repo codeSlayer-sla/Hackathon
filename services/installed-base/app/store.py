@@ -74,7 +74,8 @@ CREATE TABLE IF NOT EXISTS technicians (
     pin_hash TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL,
     last_seen_at TEXT,
-    last_extract_at TEXT
+    last_extract_at TEXT,
+    remote_extraction_count INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -150,6 +151,13 @@ class Store:
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        # CREATE TABLE IF NOT EXISTS above doesn't add columns to a
+        # technicians table that already existed before this one was added.
+        existing_columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(technicians)")}
+        if "remote_extraction_count" not in existing_columns:
+            self._conn.execute(
+                "ALTER TABLE technicians ADD COLUMN remote_extraction_count INTEGER NOT NULL DEFAULT 0"
+            )
         self._conn.commit()
 
     def is_empty(self) -> bool:
@@ -415,10 +423,10 @@ class Store:
         return [dict(r) for r in cur.fetchall()]
 
     def list_technicians_with_activity(self) -> list[dict]:
-        """Same as list_technicians() plus observation_count and
-        last_extract_at -- what the frontend's ops dashboard actually needs
-        (uploads + whether they've offloaded processing to this node), in
-        one query instead of the view doing its own joins."""
+        """Same as list_technicians() plus observation_count, last_extract_at,
+        and remote_extraction_count -- what the frontend's ops dashboard
+        actually needs (uploads + how much they've offloaded processing to
+        this node), in one query instead of the view doing its own joins."""
         cur = self._conn.execute(
             """
             SELECT
@@ -427,6 +435,7 @@ class Store:
                 t.created_at,
                 t.last_seen_at,
                 t.last_extract_at,
+                t.remote_extraction_count,
                 COALESCE(o.cnt, 0) AS observation_count
             FROM technicians t
             LEFT JOIN (
@@ -438,8 +447,16 @@ class Store:
         return [dict(r) for r in cur.fetchall()]
 
     def touch_technician_last_extract(self, technician_id: str) -> None:
+        """Bumped once per successful POST /extract -- each call is one
+        inference this technician's phone offloaded to the mesh's main node
+        instead of running on-device, so the running count doubles as a
+        delegation volume metric, not just a "did this ever happen" flag."""
         self._conn.execute(
-            "UPDATE technicians SET last_extract_at = ? WHERE technician_id = ?",
+            """
+            UPDATE technicians
+            SET last_extract_at = ?, remote_extraction_count = remote_extraction_count + 1
+            WHERE technician_id = ?
+            """,
             (datetime.now(timezone.utc).isoformat(), technician_id),
         )
         self._conn.commit()

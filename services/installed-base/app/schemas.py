@@ -35,6 +35,7 @@ class TechnicianSummary(BaseModel):
     created_at: str
     last_seen_at: str | None = None
     last_extract_at: str | None = None
+    remote_extraction_count: int = 0
     observation_count: int = 0
 
 

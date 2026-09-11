@@ -130,6 +130,8 @@ services:
       ROUTER_URL: http://router:8000
       INSTALLED_BASE_DB_PATH: /data/installed_base.db
       INSTALLED_BASE_MEDIA_DIR: /data/media
+      # Live demo against a real client node -- start empty, no fictional data.
+      SEED_DEMO_DATA: "false"
       # Demo-only pepper for PIN hashing -- change this (and rotate demo
       # PINs) before ever using this outside a hackathon sandbox.
       AUTH_PEPPER: hackathon-demo-pepper-change-me

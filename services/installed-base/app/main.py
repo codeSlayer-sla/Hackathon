@@ -46,6 +46,11 @@ settings = NodeSettings()
 DB_PATH = os.environ.get("INSTALLED_BASE_DB_PATH", "/data/installed_base.db")
 MEDIA_DIR = os.environ.get("INSTALLED_BASE_MEDIA_DIR", "/data/media")
 PHOTO_QUEUE_POLL_SECONDS = 3
+# Off for a live demo against a real client node -- the Customer 360 /
+# analytics views should only ever show what technicians actually reported,
+# never the fictional dataset. On by default so a fresh clone still has data
+# to look at without anyone submitting an observation first.
+SEED_DEMO_DATA = os.environ.get("SEED_DEMO_DATA", "true").lower() != "false"
 
 store: Store | None = None
 
@@ -73,7 +78,7 @@ async def lifespan(app: FastAPI):
     os.makedirs(os.path.join(MEDIA_DIR, "photos"), exist_ok=True)
     os.makedirs(os.path.join(MEDIA_DIR, "audio"), exist_ok=True)
     store = Store(DB_PATH)
-    if store.is_empty():
+    if store.is_empty() and SEED_DEMO_DATA:
         store.seed(SEED_OBSERVATIONS)
         logger.info("Seeded %d demo observations", len(SEED_OBSERVATIONS))
     auth.set_store(store)

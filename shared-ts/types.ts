@@ -161,6 +161,7 @@ export interface TechnicianSummary {
   created_at: string;
   last_seen_at?: string;
   last_extract_at?: string;
+  remote_extraction_count: number;
   observation_count: number;
 }
 
